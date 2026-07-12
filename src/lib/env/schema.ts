@@ -34,6 +34,11 @@ const emailAllowlist = z
       .filter(Boolean)
   );
 
+const idAllowlist = z
+  .string()
+  .default("")
+  .transform((value) => value.split(",").map((item) => item.trim()).filter(Boolean));
+
 export const envSchema = z.object({
   NEXT_PUBLIC_AUTH_MODE: z.enum(["auto", "mock"]).default("auto"),
   NEXT_PUBLIC_APP_URL: optionalUrl,
@@ -50,6 +55,7 @@ export const envSchema = z.object({
   LINE_MEDIA_SEND_ENABLED: booleanEnv(false),
   LINE_RICH_MENU_MUTATION_ENABLED: booleanEnv(false),
   LINE_TRACKING_ENABLED: booleanEnv(true),
+  LINE_TEST_USER_IDS: idAllowlist,
   ADMIN_EMAIL_ALLOWLIST: emailAllowlist,
 
   NEXT_PUBLIC_SUPABASE_URL: optionalUrl,
@@ -71,7 +77,7 @@ export const envSchema = z.object({
   SCHEDULER_STALE_AFTER_MINUTES: integerEnv(5),
   MAX_CAMPAIGN_RECIPIENTS: integerEnv(50000),
   MAX_MULTICAST_BATCH_SIZE: integerEnv(500).refine((value) => value > 0 && value <= 500),
-  LINE_MEDIA_BUCKET: z.string().min(1).default("line-public-media"),
+  LINE_MEDIA_BUCKET: z.string().min(1).default("line-media"),
   MEDIA_IMAGE_MAX_BYTES: integerEnv(8388608),
   MEDIA_VIDEO_MAX_BYTES: integerEnv(52428800),
   MEDIA_AUDIO_MAX_BYTES: integerEnv(20971520),

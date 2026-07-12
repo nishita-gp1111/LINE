@@ -5,6 +5,7 @@ import { getServerEnv } from "@/lib/env/server";
 import { createLinePushClient, lineTextMessageSchema, LineSendConfigurationError, type LinePushClient, type LinePushResult } from "@/lib/line/send";
 import type { InboxRole, InboxStore } from "@/lib/inbox/types";
 import type { MessageRecord } from "@/lib/webhook/store";
+import { assertTestRecipient } from "@/lib/launch/flags";
 
 export class InboxSendError extends Error {
   constructor(message: string) {
@@ -63,6 +64,11 @@ export async function sendInboxTextMessage(input: SendMessageInput): Promise<{ m
   const detail = await input.store.getConversation(input.organizationId, resolved.conversationId, input.profileId);
   if (!detail || detail.contact.id !== resolved.contactId) throw new InboxSendError("送信先が見つかりません。");
   if (detail.contact.friendStatus === "blocked") throw new InboxSendError("このユーザーは現在ブロック状態です。");
+  try {
+    assertTestRecipient(detail.contact.lineUserId);
+  } catch (error) {
+    throw new InboxSendError(error instanceof Error ? error.message : "送信先が許可されていません。");
+  }
   if (resolved.message.status === "accepted" || resolved.message.status === "sending") return { message: resolved.message, reused: true };
   if (resolved.message.status !== "queued" && resolved.message.status !== "retryable_failed") throw new InboxSendError("このメッセージは送信できません。");
   if (input.messageId && resolved.message.failedAt && Date.now() - Date.parse(resolved.message.failedAt) > 24 * 60 * 60 * 1000) throw new InboxSendError("再試行期限を過ぎています。新規メッセージとして内容を確認して送信してください。");

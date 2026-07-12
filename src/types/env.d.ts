@@ -15,6 +15,7 @@ declare namespace NodeJS {
     LINE_MEDIA_SEND_ENABLED?: "true" | "false";
     LINE_RICH_MENU_MUTATION_ENABLED?: "true" | "false";
     LINE_TRACKING_ENABLED?: "true" | "false";
+    LINE_TEST_USER_IDS?: string;
     ADMIN_EMAIL_ALLOWLIST?: string;
 
     NEXT_PUBLIC_SUPABASE_URL?: string;
