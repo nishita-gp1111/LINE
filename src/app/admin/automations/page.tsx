@@ -1,0 +1,3 @@
+import Link from "next/link";
+
+export default function AutomationsPage() { return <main className="min-h-screen px-6 py-8 sm:px-10"><div className="mx-auto max-w-5xl"><Link href="/admin" className="text-sm text-moss">← 管理画面</Link><h1 className="mt-5 text-3xl font-black">ステップ配信・自動応答</h1><p className="mt-2 text-sm text-ink/65">version固定のシナリオと、exact→prefix→contains→regexの優先順位で評価します。</p><div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-6"><p className="font-black">競合確認</p><p className="mt-2 text-sm text-ink/70">LINE Official Account Managerの応答メッセージ・あいさつメッセージが有効だと二重応答になる可能性があります。人間が確認するまで自動送信を有効化しないでください。</p></div></div></main>; }
