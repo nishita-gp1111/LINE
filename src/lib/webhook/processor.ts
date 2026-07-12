@@ -65,7 +65,8 @@ export async function processWebhookEvent(
     }
 
     if (event.type === "follow") {
-      await applyContact(store, context, event, "follow");
+      const contact = await applyContact(store, context, event, "follow");
+      if (contact && store.ensureConversationForContact) await store.ensureConversationForContact(context.organizationId, contact.id, eventAt(event));
       await store.completeEvent(claim.eventId, "processed");
       return "processed";
     }
@@ -82,7 +83,7 @@ export async function processWebhookEvent(
         await store.completeEvent(claim.eventId, "ignored");
         return "ignored";
       }
-      await store.insertInboundMessage({
+      const inserted = await store.insertInboundMessage({
         organizationId: context.organizationId,
         contactId: contact.id,
         lineMessageId: event.message.id || null,
@@ -92,12 +93,23 @@ export async function processWebhookEvent(
         payloadJson: minimalMessagePayload(event),
         eventAt: eventAt(event)
       });
+      if (inserted.inserted && inserted.message && store.ensureConversationForContact) {
+        const conversation = await store.ensureConversationForContact(context.organizationId, contact.id, eventAt(event), inserted.message);
+        if (store.incrementUnreadForInbound) await store.incrementUnreadForInbound(context.organizationId, conversation.id, inserted.message.id);
+      }
       await store.completeEvent(claim.eventId, "processed");
       return "processed";
     }
 
     if (event.type === "unsend" && event.unsend) {
       await store.redactMessage(context.organizationId, event.unsend.messageId);
+      if (store.recalculateConversationPreview) {
+        const contact = event.source?.userId ? await store.getContact(context.organizationId, event.source.userId) : null;
+        if (contact) {
+          const conversation = await store.ensureConversationForContact?.(context.organizationId, contact.id, eventAt(event));
+          if (conversation) await store.recalculateConversationPreview(context.organizationId, conversation.id);
+        }
+      }
       await store.completeEvent(claim.eventId, "processed");
       return "processed";
     }

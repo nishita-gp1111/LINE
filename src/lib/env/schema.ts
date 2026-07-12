@@ -40,6 +40,8 @@ export const envSchema = z.object({
   APP_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_TIMEZONE: z.string().default("Asia/Tokyo"),
   MOCK_LINE_API: booleanEnv(true),
+  LINE_MANUAL_SEND_ENABLED: booleanEnv(false),
+  MOCK_LINE_SEND_OUTCOME: z.enum(["success", "409", "429", "500", "timeout"]).default("success"),
   ADMIN_EMAIL_ALLOWLIST: emailAllowlist,
 
   NEXT_PUBLIC_SUPABASE_URL: optionalUrl,

@@ -5,6 +5,8 @@ declare namespace NodeJS {
     APP_ENV?: "development" | "test" | "production";
     APP_TIMEZONE?: string;
     MOCK_LINE_API?: "true" | "false";
+    LINE_MANUAL_SEND_ENABLED?: "true" | "false";
+    MOCK_LINE_SEND_OUTCOME?: "success" | "409" | "429" | "500" | "timeout";
     ADMIN_EMAIL_ALLOWLIST?: string;
 
     NEXT_PUBLIC_SUPABASE_URL?: string;
