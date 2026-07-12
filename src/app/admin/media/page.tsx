@@ -1,0 +1,3 @@
+import Link from "next/link";
+
+export default function MediaPage() { return <main className="min-h-screen px-6 py-8 sm:px-10"><div className="mx-auto max-w-5xl"><Link href="/admin" className="text-sm text-moss">← 管理画面</Link><h1 className="mt-5 text-3xl font-black">メディア</h1><p className="mt-2 text-sm text-ink/65">LINE公開配信用の画像・動画・音声です。公開URLはURLを知る人が取得できます。</p><div className="mt-6 rounded-xl border border-line bg-white p-6"><p className="font-black">安全な初期状態</p><p className="mt-2 text-sm text-ink/65">MIME・拡張子・magic bytes・容量・previewを検証し、Service Roleはブラウザへ渡しません。Storage bucketは本番で人間が作成します。</p></div></div></main>; }
