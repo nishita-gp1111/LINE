@@ -36,11 +36,15 @@ export default async function AdminPage() {
         <section className="mt-6 rounded-xl border border-line bg-white p-6">
           <h2 className="text-lg font-black">次の実装予定</h2>
           <p className="mt-2 text-sm leading-7 text-ink/65">
-            LINE接続、Webhook、顧客、Inbox、配信、アンケート自動タグは後続マイルストーンで実装します。
+            LINE接続、Webhook、顧客、Inboxは実装済みです。配信、アンケート自動タグなどは後続マイルストーンです。
           </p>
         </section>
 
         <section className="mt-6 grid gap-4 sm:grid-cols-2">
+          <Link href="/admin/inbox" className="rounded-xl border border-line bg-white p-5 hover:bg-paper">
+            <p className="text-xs font-bold text-moss">Inbox</p>
+            <p className="mt-2 text-lg font-black">会話・返信・対応管理を見る →</p>
+          </Link>
           <Link href="/admin/settings/line" className="rounded-xl border border-line bg-white p-5 hover:bg-paper">
             <p className="text-xs font-bold text-moss">LINE接続</p>
             <p className="mt-2 text-lg font-black">Webhook・設定状態を見る →</p>

@@ -66,6 +66,7 @@ describe("environment schema", () => {
     expect(env.APP_ENV).toBe("development");
     expect(env.APP_TIMEZONE).toBe("Asia/Tokyo");
     expect(env.MOCK_LINE_API).toBe(true);
+    expect(env.LINE_MANUAL_SEND_ENABLED).toBe(false);
     expect(env.ADMIN_EMAIL_ALLOWLIST).toEqual([]);
     expect(env.SURVEY_MAX_QUESTIONS).toBe(50);
   });
