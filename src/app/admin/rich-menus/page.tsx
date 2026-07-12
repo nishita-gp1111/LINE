@@ -1,0 +1,3 @@
+import Link from "next/link";
+
+export default function RichMenusPage() { return <main className="min-h-screen px-6 py-8 sm:px-10"><div className="mx-auto max-w-5xl"><Link href="/admin" className="text-sm text-moss">← 管理画面</Link><h1 className="mt-5 text-3xl font-black">リッチメニュー</h1><p className="mt-2 text-sm text-ink/65">API管理と外部管理を区別し、既存のOA Managerメニューを壊さないようにします。</p><div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-6"><p className="font-black">安全ゲート</p><p className="mt-2 text-sm text-ink/70">DraftはLINEへ作成しません。default変更はownerの確認文とテストユーザーへのper-user link確認後、LINE_RICH_MENU_MUTATION_ENABLEDを一時的に有効化して実行します。</p></div></div></main>; }
