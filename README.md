@@ -49,14 +49,21 @@ pnpm line:webhook:mock -- --fixture unsend
 利用できるfixtureは `empty`、`follow`、`follow-redelivery`、`unfollow`、`re-follow`、`text`、
 `non-text`、`unsend`、`unsupported`、`group`、`malformed` です。`APP_ENV=production` では送信を拒否します。
 
-### LINE Developers Console設定
-
-1. Messaging APIチャネルのWebhook URLに、管理画面に表示される `/api/line/webhook` URLを設定します。
-2. Webhookの利用を有効化し、応答メッセージの自動返信は無効化します。現在のサーバーは返信処理を持たないため、ここを有効にすると二重返信の原因になります。
-3. LINE_CHANNEL_SECRET、LINE_CHANNEL_ACCESS_TOKEN、LINE_CHANNEL_IDを`.env.local`または本番環境のsecret設定へ登録します。
-4. LINE Developers Consoleの「Verify」は、live modeの実環境設定後にだけ実行してください。ローカル確認は上記fixtureを使います。
-
 profile取得が一時失敗してもWebhook全体を落とさず、LINE user IDとイベント時刻を使ってcontactを保存します。イベント時刻が古い受信イベントは、友だち状態やprofile表示を新しい状態へ戻しません。未対応イベントは200で受理し、`webhook_events`へignoredとして記録します。
+
+### LINE Developers Console設定手順
+
+現在のLINE Developers Consoleでは、対象ProviderのMessaging API channelを開き、Messaging APIタブからWebhookを設定します。
+
+1. `/admin/settings/line` のWebhook URLをコピーし、Messaging APIタブのWebhook URLへ登録します。本番URLはHTTPSである必要があります。
+2. 「Use webhook」をONにします。再送を利用する場合は「Webhook redelivery」もONにします。本アプリは`webhookEventId`で再送を重複排除します。
+3. Basic settingsでChannel Secretを確認し、`LINE_CHANNEL_SECRET`として本番環境のsecretへ登録します。値は管理画面やログへ表示しません。
+4. Messaging API settingsでChannel access tokenを発行し、`LINE_CHANNEL_ACCESS_TOKEN`として本番環境のsecretへ登録します。Channel IDは`LINE_CHANNEL_ID`へ設定します。
+5. Webhook URL欄の「Verify」を押します。LINE Platformは署名付きの`events: []`リクエストを送り、アプリがHTTP 200を返せば疎通確認できます。
+6. 画面の「接続確認」を押すと、Environment Variable確認、live modeのLINE API認証確認、署名付きWebhook URL確認を実行できます。mock modeでは実LINE APIの認証確認を行わず、mock確認として表示します。
+7. 返信送信はMilestone 2以降のため、不要なGreeting messages / Auto-reply messagesはOFFにします。
+
+公式手順: [Verify webhook URL](https://developers.line.biz/en/docs/messaging-api/verify-webhook-url/)、[Receive messages (webhook)](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)、[Verify webhook signature](https://developers.line.biz/en/docs/messaging-api/verify-webhook-signature/)。
 
 ## Milestone 2: Inboxと手動テキスト返信
 
