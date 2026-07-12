@@ -1,0 +1,3 @@
+# Attribution
+
+Tracked linkは登録済みHTTPS URLだけへredirectし、raw IPやLINE user IDをURL/DBへ保存しません。既知contactの署名付きlink・postback・surveyはdeterministic、匿名QR/流入はestimatedとして表示します。匿名クリックだけでfollowを確実に紐付けられるとは表現しません。`LINE_TRACKING_ENABLED=false`では計測せず運用を継続します。

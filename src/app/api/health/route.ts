@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuthMode } from "@/lib/auth/config";
 import { getServerEnv } from "@/lib/env/server";
+import { launchBlockers, launchFlagStatus } from "@/lib/launch/flags";
+import { publicLaunchStatus } from "@/lib/launch/cron";
 
 export function GET() {
   const env = getServerEnv();
@@ -16,6 +18,11 @@ export function GET() {
       supabaseUrl: Boolean(env.NEXT_PUBLIC_SUPABASE_URL),
       supabaseAnonKey: Boolean(env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
       adminEmailAllowlist: env.ADMIN_EMAIL_ALLOWLIST.length > 0
+    },
+    launch: {
+      flags: launchFlagStatus(),
+      scheduler: publicLaunchStatus(),
+      blockers: launchBlockers()
     }
   });
 }
