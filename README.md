@@ -49,16 +49,9 @@ pnpm line:webhook:mock -- --fixture unsend
 利用できるfixtureは `empty`、`follow`、`follow-redelivery`、`unfollow`、`re-follow`、`text`、
 `non-text`、`unsend`、`unsupported`、`group`、`malformed` です。`APP_ENV=production` では送信を拒否します。
 
-### LINE Developers Console設定
-
-1. Messaging APIチャネルのWebhook URLに、管理画面に表示される `/api/line/webhook` URLを設定します。
-2. Webhookの利用を有効化し、応答メッセージの自動返信は無効化します。現在のサーバーは返信処理を持たないため、ここを有効にすると二重返信の原因になります。
-3. LINE_CHANNEL_SECRET、LINE_CHANNEL_ACCESS_TOKEN、LINE_CHANNEL_IDを`.env.local`または本番環境のsecret設定へ登録します。
-4. LINE Developers Consoleの「Verify」は、live modeの実環境設定後にだけ実行してください。ローカル確認は上記fixtureを使います。
-
 profile取得が一時失敗してもWebhook全体を落とさず、LINE user IDとイベント時刻を使ってcontactを保存します。イベント時刻が古い受信イベントは、友だち状態やprofile表示を新しい状態へ戻しません。未対応イベントは200で受理し、`webhook_events`へignoredとして記録します。
 
-### LINE Developers設定手順
+### LINE Developers Console設定手順
 
 現在のLINE Developers Consoleでは、対象ProviderのMessaging API channelを開き、Messaging APIタブからWebhookを設定します。
 
@@ -71,6 +64,32 @@ profile取得が一時失敗してもWebhook全体を落とさず、LINE user ID
 7. 返信送信はMilestone 2以降のため、不要なGreeting messages / Auto-reply messagesはOFFにします。
 
 公式手順: [Verify webhook URL](https://developers.line.biz/en/docs/messaging-api/verify-webhook-url/)、[Receive messages (webhook)](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)、[Verify webhook signature](https://developers.line.biz/en/docs/messaging-api/verify-webhook-signature/)。
+
+## Milestone 2: Inboxと手動テキスト返信
+
+Milestone 2では、1対1トークの会話確認とCRM内の対応管理、管理画面からのテキスト返信を実装します。
+
+- `/admin/inbox`: 会話一覧、会話詳細、CRM内未確認・確認済み、対応中・保留・完了、担当者、優先度、内部メモ
+- `/admin/settings/quick-replies`: テキストクイック返信の作成・編集・有効/無効・削除
+- Push APIによる1人宛てテキスト送信。replyTokenは保存・利用しません。
+- `X-Line-Retry-Key`、`clientRequestId`、送信状態、限定再試行、Mock送信
+- 送信状態は「LINE受付済み」であり、到達・既読を意味しません。
+
+実LINEへの手動送信は `LINE_MANUAL_SEND_ENABLED=false` が既定です。`MOCK_LINE_API=true` ではこのゲートに関係なくMock送信を確認できます。live modeで送信する場合だけ、管理者が `LINE_MANUAL_SEND_ENABLED=true` を設定してください。送信は常にサーバーでcontactを解決し、viewer、他organization、blocked contactからの送信を拒否します。
+
+本文上限はLINE公式仕様に合わせて5000文字です。LINEの文字数はUTF-16 code unitsで数えられるため、絵文字などでは画面の見た目の文字数と異なる場合があります。
+
+### Inbox運用上の注意
+
+- 「CRM内未確認・確認済み」は管理画面ごとの状態であり、LINEユーザーの既読状態ではありません。
+- Milestone 2ではLINEのMark as read APIや`markAsReadToken`を利用しません。CRM内確認済み操作とLINE Official Account Manager上の既読は別概念です。
+- CRM接続前の過去トーク履歴は自動取得しません。
+- LINE Official Account Managerから送った手動メッセージとCRMの履歴が完全一致するとは限りません。CRMが把握する送信履歴は原則としてCRM自身がMessaging APIで送ったものです。
+- group、room、複数人トーク、画像・動画・音声・スタンプ・Flex、一斉配信、予約配信、自動応答、タグ、アンケート、予約、分析、AIはMilestone 2の対象外です。
+
+### Mock送信fixture
+
+`MOCK_LINE_SEND_OUTCOME`で`success`、`409`、`429`、`500`、`timeout`を選択できます。成功と409は「LINE受付済み」、429は再試行しない送信失敗、500/timeoutは同じRetry Keyで限定再試行後に「再試行待ち」になります。
 
 ## 起動
 
@@ -93,6 +112,8 @@ pnpm dev
 - `APP_ENV`: `development` / `test` / `production`
 - `APP_TIMEZONE`: 既定値 `Asia/Tokyo`
 - `MOCK_LINE_API`: 既定値 `true`。Milestone 1以降のLINE mock切替用
+- `LINE_MANUAL_SEND_ENABLED`: 既定値 `false`。live modeの手動Push送信ゲート。mock modeではfalseでもMock送信可能
+- `MOCK_LINE_SEND_OUTCOME`: 既定値 `success`。Mock送信の結果fixture
 - `ADMIN_EMAIL_ALLOWLIST`: 管理者メールアドレスのカンマ区切り。Milestone 0では表示・認証制御に未使用
 
 ### Supabase
@@ -125,7 +146,7 @@ pnpm dev
 
 1. Supabaseプロジェクトを作成します。
 2. Supabase Authでメール/パスワード認証を有効にします。
-3. `supabase/migrations/20260712000000_milestone_0_auth_foundation.sql`、続けて `supabase/migrations/20260712010000_milestone_1_line_webhook.sql` をSQL EditorまたはSupabase CLIで適用します。
+3. `supabase/migrations/20260712000000_milestone_0_auth_foundation.sql`、続けて `supabase/migrations/20260712010000_milestone_1_line_webhook.sql`、`supabase/migrations/20260712020000_milestone_2_inbox.sql` をSQL EditorまたはSupabase CLIで適用します。
 4. Authユーザーを作成し、`.env.local` に公開URLとanon keyを設定します。
 5. `/login` からSupabase Authでログインします。
 
@@ -141,7 +162,7 @@ pnpm build
 pnpm test:e2e
 ```
 
-E2Eはmock modeの開発サーバーで、未認証の `/admin` リダイレクトとmockログインを確認します。Webhookの単体・統合テストは `pnpm test` に含まれます。RPCはservice roleだけが実行でき、管理画面の読み取りは組織RLSの範囲に限定されます。
+E2Eはmock modeの開発サーバーで、未認証の `/admin` リダイレクトとmockログインを確認します。WebhookとInboxの単体・統合テストは `pnpm test` に含まれます。RPCはservice roleだけが実行でき、管理画面の読み取りは組織RLSの範囲に限定されます。macOSのChromium sandbox権限でE2Eが起動できない場合は、OSのセキュリティ設定を弱めず、HTTP確認と単体・統合テストを代替確認として区別してください。
 
 ## コスト方針
 

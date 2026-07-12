@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import type { ConversationRecord } from "@/lib/inbox/types";
 import type {
   ApplyContactInput,
   ClaimInput,
@@ -52,7 +53,20 @@ function mapMessage(row: MessageRow): MessageRecord {
     messageType: String(row.message_type),
     textContent: (row.text_content as string | null) || null,
     payloadJson: (row.payload_json as Record<string, unknown>) || {},
-    status: row.status as "received" | "deleted",
+    status: row.status as MessageRecord["status"],
+    conversationId: (row.conversation_id as string | null) || null,
+    clientRequestId: (row.client_request_id as string | null) || null,
+    retryKey: (row.retry_key as string | null) || null,
+    lineAcceptedRequestId: (row.line_accepted_request_id as string | null) || null,
+    lineSentMessageId: (row.line_sent_message_id as string | null) || null,
+    sentByProfileId: (row.sent_by_profile_id as string | null) || null,
+    attemptCount: Number(row.attempt_count || 0),
+    errorClass: (row.error_class as string | null) || null,
+    errorCode: (row.error_code as string | null) || null,
+    errorMessageSafe: (row.error_message_safe as string | null) || null,
+    acceptedAt: (row.accepted_at as string | null) || null,
+    failedAt: (row.failed_at as string | null) || null,
+    cancelledAt: (row.cancelled_at as string | null) || null,
     lineEventTimestamp: String(row.line_event_timestamp),
     deletedAt: (row.deleted_at as string | null) || null,
     createdAt: String(row.created_at),
@@ -212,6 +226,46 @@ export class SupabaseWebhookStore implements WebhookStore {
       failedCount: rows.filter((row) => row.status === "failed").length,
       signatureErrorCount: 0
     };
+  }
+
+  async ensureConversationForContact(organizationId: string, contactId: string, eventAt: string): Promise<ConversationRecord> {
+    const { data, error } = await this.client.rpc("ensure_conversation_for_contact", {
+      target_organization_id: organizationId,
+      target_contact_id: contactId,
+      target_event_at: eventAt
+    });
+    if (error) throw new Error("会話の作成に失敗しました。");
+    const { data: row, error: selectError } = await this.client.from("conversations").select("*").eq("organization_id", organizationId).eq("id", data as string).single();
+    if (selectError || !row) throw new Error("会話の再取得に失敗しました。");
+    return {
+      id: String(row.id),
+      organizationId: String(row.organization_id),
+      contactId: String(row.contact_id),
+      status: row.status as ConversationRecord["status"],
+      assigneeProfileId: (row.assignee_profile_id as string | null) || null,
+      priority: row.priority as ConversationRecord["priority"],
+      lastMessageAt: (row.last_message_at as string | null) || null,
+      lastInboundAt: (row.last_inbound_at as string | null) || null,
+      lastOutboundAt: (row.last_outbound_at as string | null) || null,
+      lastMessagePreview: (row.last_message_preview as string | null) || null,
+      lastMessageDirection: row.last_message_direction as ConversationRecord["lastMessageDirection"],
+      reopenedAt: (row.reopened_at as string | null) || null,
+      closedAt: (row.closed_at as string | null) || null,
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at)
+    };
+  }
+
+  async incrementUnreadForInbound(_organizationId: string, _conversationId: string, _messageId: string): Promise<void> {
+    // The Milestone 2 inbound insert RPC increments read states atomically.
+  }
+
+  async recalculateConversationPreview(organizationId: string, conversationId: string): Promise<void> {
+    const { error } = await this.client.rpc("refresh_conversation_preview", {
+      target_organization_id: organizationId,
+      target_conversation_id: conversationId
+    });
+    if (error) throw new Error("会話previewの更新に失敗しました。");
   }
 }
 
