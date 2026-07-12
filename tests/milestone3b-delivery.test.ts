@@ -10,6 +10,7 @@ describe("Milestone 3B delivery", () => {
   });
   it("creates LINE multicast-sized batches and respects quota reserve", () => {
     expect(chunk(Array.from({ length: 1001 }, (_, index) => index), 500)).toHaveLength(3);
+    expect(chunk(Array.from({ length: 50000 }, (_, index) => index), 500)).toHaveLength(100);
     expect(quotaAllows({ quotaTotal: 1000, quotaUsed: 900, recipientCount: 70, reservePercent: 3 })).toBe(true);
     expect(quotaAllows({ quotaTotal: 1000, quotaUsed: 900, recipientCount: 100, reservePercent: 3 })).toBe(false);
   });
