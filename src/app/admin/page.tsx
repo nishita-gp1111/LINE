@@ -1,6 +1,7 @@
 import { LogoutButton } from "@/components/logout-button";
 import { getAuthMode } from "@/lib/auth/config";
 import { requireAuthenticatedUser } from "@/lib/auth/server";
+import Link from "next/link";
 
 export default async function AdminPage() {
   const user = await requireAuthenticatedUser();
@@ -37,6 +38,17 @@ export default async function AdminPage() {
           <p className="mt-2 text-sm leading-7 text-ink/65">
             LINE接続、Webhook、顧客、Inbox、配信、アンケート自動タグは後続マイルストーンで実装します。
           </p>
+        </section>
+
+        <section className="mt-6 grid gap-4 sm:grid-cols-2">
+          <Link href="/admin/settings/line" className="rounded-xl border border-line bg-white p-5 hover:bg-paper">
+            <p className="text-xs font-bold text-moss">LINE接続</p>
+            <p className="mt-2 text-lg font-black">Webhook・設定状態を見る →</p>
+          </Link>
+          <Link href="/admin/contacts" className="rounded-xl border border-line bg-white p-5 hover:bg-paper">
+            <p className="text-xs font-bold text-moss">Contacts</p>
+            <p className="mt-2 text-lg font-black">顧客一覧を見る →</p>
+          </Link>
         </section>
       </div>
     </main>

@@ -12,6 +12,7 @@ declare namespace NodeJS {
     SUPABASE_SERVICE_ROLE_KEY?: string;
     SUPABASE_DB_URL?: string;
 
+    LINE_ORGANIZATION_ID?: string;
     LINE_CHANNEL_ID?: string;
     LINE_CHANNEL_SECRET?: string;
     LINE_CHANNEL_ACCESS_TOKEN?: string;

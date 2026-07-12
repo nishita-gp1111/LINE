@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "line:webhook:mock": "node scripts/line-webhook-mock.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

@@ -47,6 +47,7 @@ export const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: optionalText,
   SUPABASE_DB_URL: optionalText,
 
+  LINE_ORGANIZATION_ID: optionalText,
   LINE_CHANNEL_ID: optionalText,
   LINE_CHANNEL_SECRET: optionalText,
   LINE_CHANNEL_ACCESS_TOKEN: optionalText,
