@@ -13,7 +13,50 @@
 - Supabase Authユーザーのprofile自動作成と組織RLS基礎
 - Vitest、Playwright、lint、typecheck、buildの実行基盤
 
-LINE Webhook、友だち情報、Inbox、配信、アンケート自動タグ、LIFF、予約、リッチメニュー、分析は後続マイルストーンです。
+Inbox、配信、アンケート自動タグ、LIFF、予約、リッチメニュー、分析は後続マイルストーンです。
+
+## Milestone 1: LINE接続とWebhook基盤
+
+Milestone 1では、LINE Messaging APIからの受信を安全に保存する基盤までを実装しています。
+
+- `POST /api/line/webhook` の raw body HMAC-SHA256署名検証（`x-line-signature`）
+- 署名検証後のJSON検証、空イベント・未対応イベント・group/roomイベントの安全な無視
+- `webhook_events` の `(organization_id, webhook_event_id)` claimによる再送・同時実行の重複排除
+- `contacts` の友だち追加・ブロック・再追加・メッセージ受信時のprofile upsert
+- `messages` への受信メッセージ保存（本文はtextだけ、replyTokenは保存・出力しない）
+- unsend受信時の本文・payload匿名化
+- `/admin/settings/line`、`/admin/contacts`、`/admin/contacts/[id]` の読み取り画面
+- mock profileと署名付きローカルfixture送信。LINEからの返信・送信処理はまだありません。
+
+### LINE環境変数
+
+`LINE_CHANNEL_SECRET` はmock modeでも署名検証のため必須です。live modeでは、これに加えて
+`LINE_ORGANIZATION_ID`、`LINE_CHANNEL_ID`、`LINE_CHANNEL_ACCESS_TOKEN` が必要です。
+値は `.env.local` にだけ設定し、Gitへコミットしないでください。
+
+### ローカルWebhook確認
+
+開発サーバーを起動したあと、署名付きfixtureを送信できます。スクリプトは `.env.local` の値を読みますが、秘密値は表示しません。
+
+```bash
+pnpm dev
+pnpm line:webhook:mock -- --fixture follow
+pnpm line:webhook:mock -- --fixture follow-redelivery
+pnpm line:webhook:mock -- --fixture text
+pnpm line:webhook:mock -- --fixture unsend
+```
+
+利用できるfixtureは `empty`、`follow`、`follow-redelivery`、`unfollow`、`re-follow`、`text`、
+`non-text`、`unsend`、`unsupported`、`group`、`malformed` です。`APP_ENV=production` では送信を拒否します。
+
+### LINE Developers Console設定
+
+1. Messaging APIチャネルのWebhook URLに、管理画面に表示される `/api/line/webhook` URLを設定します。
+2. Webhookの利用を有効化し、応答メッセージの自動返信は無効化します。現在のサーバーは返信処理を持たないため、ここを有効にすると二重返信の原因になります。
+3. LINE_CHANNEL_SECRET、LINE_CHANNEL_ACCESS_TOKEN、LINE_CHANNEL_IDを`.env.local`または本番環境のsecret設定へ登録します。
+4. LINE Developers Consoleの「Verify」は、live modeの実環境設定後にだけ実行してください。ローカル確認は上記fixtureを使います。
+
+profile取得が一時失敗してもWebhook全体を落とさず、LINE user IDとイベント時刻を使ってcontactを保存します。イベント時刻が古い受信イベントは、友だち状態やprofile表示を新しい状態へ戻しません。未対応イベントは200で受理し、`webhook_events`へignoredとして記録します。
 
 ## 起動
 
@@ -44,11 +87,11 @@ pnpm dev
 - `SUPABASE_SERVICE_ROLE_KEY`: サーバー専用。ブラウザへ公開しない
 - `SUPABASE_DB_URL`: サーバー・運用スクリプト専用。Milestone 0では未使用
 
-### LINE・LIFF（後続マイルストーン）
+### LINE・LIFF
 
-`LINE_CHANNEL_ID`、`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`、
+`LINE_ORGANIZATION_ID`、`LINE_CHANNEL_ID`、`LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`、
 `LINE_ADMIN_USER_ID`、`NEXT_PUBLIC_LIFF_ID`、`LINE_LOGIN_CHANNEL_ID`、
-`LINE_LOGIN_CHANNEL_SECRET` は、LINE接続実装まで空欄にします。
+`LINE_LOGIN_CHANNEL_SECRET` は、実際のLINE接続を行わない環境では空欄のままにします。Milestone 1のmock webhook確認では、`LINE_CHANNEL_SECRET`だけ任意のローカル専用値を設定してください。
 
 ### Cron・保持期限・容量上限（後続マイルストーン）
 
@@ -68,7 +111,7 @@ pnpm dev
 
 1. Supabaseプロジェクトを作成します。
 2. Supabase Authでメール/パスワード認証を有効にします。
-3. `supabase/migrations/20260712000000_milestone_0_auth_foundation.sql` をSQL EditorまたはSupabase CLIで適用します。
+3. `supabase/migrations/20260712000000_milestone_0_auth_foundation.sql`、続けて `supabase/migrations/20260712010000_milestone_1_line_webhook.sql` をSQL EditorまたはSupabase CLIで適用します。
 4. Authユーザーを作成し、`.env.local` に公開URLとanon keyを設定します。
 5. `/login` からSupabase Authでログインします。
 
@@ -84,7 +127,7 @@ pnpm build
 pnpm test:e2e
 ```
 
-E2Eはmock modeの開発サーバーで、未認証の `/admin` リダイレクトとmockログインを確認します。
+E2Eはmock modeの開発サーバーで、未認証の `/admin` リダイレクトとmockログインを確認します。Webhookの単体・統合テストは `pnpm test` に含まれます。RPCはservice roleだけが実行でき、管理画面の読み取りは組織RLSの範囲に限定されます。
 
 ## コスト方針
 
