@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function TrackingSourcesPage() { return <main className="min-h-screen px-6 py-8 sm:px-10"><div className="mx-auto max-w-5xl"><Link href="/admin" className="text-sm text-moss">← 管理画面</Link><h1 className="mt-5 text-3xl font-black">流入ソース</h1><p className="mt-2 text-sm text-ink/65">channel / campaign / contentを管理し、deterministicとestimatedを混ぜずに表示します。</p></div></main>; }

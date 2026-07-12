@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function AnalyticsOverviewPage() { return <main className="min-h-screen px-6 py-8 sm:px-10"><div className="mx-auto max-w-5xl"><Link href="/admin" className="text-sm text-moss">← 管理画面</Link><h1 className="mt-5 text-3xl font-black">分析概要</h1><p className="mt-2 text-sm text-ink/65">LINE API受付数を到達・既読とは表現しません。集計日時とdeterministic / estimatedを分けて表示します。</p></div></main>; }
