@@ -58,6 +58,20 @@ pnpm line:webhook:mock -- --fixture unsend
 
 profile取得が一時失敗してもWebhook全体を落とさず、LINE user IDとイベント時刻を使ってcontactを保存します。イベント時刻が古い受信イベントは、友だち状態やprofile表示を新しい状態へ戻しません。未対応イベントは200で受理し、`webhook_events`へignoredとして記録します。
 
+### LINE Developers設定手順
+
+現在のLINE Developers Consoleでは、対象ProviderのMessaging API channelを開き、Messaging APIタブからWebhookを設定します。
+
+1. `/admin/settings/line` のWebhook URLをコピーし、Messaging APIタブのWebhook URLへ登録します。本番URLはHTTPSである必要があります。
+2. 「Use webhook」をONにします。再送を利用する場合は「Webhook redelivery」もONにします。本アプリは`webhookEventId`で再送を重複排除します。
+3. Basic settingsでChannel Secretを確認し、`LINE_CHANNEL_SECRET`として本番環境のsecretへ登録します。値は管理画面やログへ表示しません。
+4. Messaging API settingsでChannel access tokenを発行し、`LINE_CHANNEL_ACCESS_TOKEN`として本番環境のsecretへ登録します。Channel IDは`LINE_CHANNEL_ID`へ設定します。
+5. Webhook URL欄の「Verify」を押します。LINE Platformは署名付きの`events: []`リクエストを送り、アプリがHTTP 200を返せば疎通確認できます。
+6. 画面の「接続確認」を押すと、Environment Variable確認、live modeのLINE API認証確認、署名付きWebhook URL確認を実行できます。mock modeでは実LINE APIの認証確認を行わず、mock確認として表示します。
+7. 返信送信はMilestone 2以降のため、不要なGreeting messages / Auto-reply messagesはOFFにします。
+
+公式手順: [Verify webhook URL](https://developers.line.biz/en/docs/messaging-api/verify-webhook-url/)、[Receive messages (webhook)](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)、[Verify webhook signature](https://developers.line.biz/en/docs/messaging-api/verify-webhook-signature/)。
+
 ## 起動
 
 ```bash
