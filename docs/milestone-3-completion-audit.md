@@ -4,17 +4,17 @@
 
 |機能|DB|API/Server|管理画面|Mock操作|Live|自動テスト|阻害要因|
 |---|---|---|---|---|---|---|---|
-|タグ|○|×|×|×|×|DSL/provenanceのみ|CRUD・顧客操作未接続|
-|カスタム項目|○|×|×|型schemaのみ|×|型検証|CRUD未接続|
-|セグメント|○|×|表示のみ|DSLのみ|×|DSL/SQL安全性|preview query未接続|
-|一斉配信|○|dispatcher基盤|表示のみ|batch/分類|×|batch/quota|campaign送信API未接続|
-|予約配信|○|job基盤|表示のみ|job遷移|×|idempotency基盤|campaign scheduler未接続|
-|ステップ配信|○|×|表示のみ|schema/validation|×|循環/抑止|Webhook/enrollment未接続|
-|キーワード応答|○|×|表示のみ|priority/regex|×|priority/regex|Webhook reply未接続|
-|アンケート|○|×|表示のみ|token/selection|×|token/action基盤|postback処理未接続|
-|リッチメニュー|○|×|表示のみ|validation|×|bounds/flag|LINE API未接続|
-|流入経路|○|route/DB adapter|表示のみ|mock link|DB route実装|redirect/dedupe|source CRUD未接続|
-|分析|○|×|表示のみ|×|×|なし|rollup/query未接続|
-|メディア|○|payload/validation|×|payloadのみ|×|MIME/size|Storage upload/send未接続|
+|タグ|○|Mock API|○|○|Live DB待ち|○|排他/CRUDのLive確認|
+|カスタム項目|○|Mock API|○|○|Live DB待ち|○|CSV/Live確認|
+|セグメント|○|Mock API|○|○|Live query待ち|○|複合条件のLive preview|
+|一斉配信|○|Mock campaign API|○|○|multicast adapter|○|campaign DB/Live送信の結線|
+|予約配信|○|job/Mock dispatcher|○|○|Live scheduler待ち|○|Cron実環境確認|
+|ステップ配信|○|Mock execution API|○|○|Webhook/Live待ち|○|待機jobのLive結線|
+|キーワード応答|○|Mock preview API|○|○|reply adapter待ち|○|Webhook reply結線|
+|アンケート|○|Mock answer API|○|○|Webhook/Live待ち|○|本番postback結線|
+|リッチメニュー|○|Mock validate/link API|○|○|Live API adapter待ち|○|LINE API接続確認|
+|流入経路|○|DB/Mock API|○|○|○|○|source analyticsの実DB確認|
+|分析|○|DB/Mock query API|○|○|○|○|期間/権限の実DB確認|
+|メディア|○|FormData/Storage API|○|○|upload adapter|○|private signed URL/Live送信確認|
 
 この表はコード側の残課題を隠さないためのものです。PRはDraftを維持し、上記未接続部分を完成扱いにしません。

@@ -23,6 +23,8 @@ export async function getLaunchReadiness(): Promise<{ state: ReadinessState; che
   let schedulerNote = "heartbeat未確認";
   let migrationOk = false;
   let migrationNote = "migration適用状態未確認";
+  let dispatcherOk = env.MOCK_LINE_API;
+  let analyticsOk = env.MOCK_LINE_API;
   if (admin && !env.MOCK_LINE_API) {
     const buckets = await admin.storage.listBuckets();
     storageOk = !buckets.error && buckets.data.some((bucket) => bucket.id === env.LINE_MEDIA_BUCKET);
@@ -36,11 +38,17 @@ export async function getLaunchReadiness(): Promise<{ state: ReadinessState; che
     const migrationProbe = await admin.from("scheduled_jobs").select("id", { head: true, count: "exact" }).limit(1);
     migrationOk = !migrationProbe.error;
     migrationNote = migrationOk ? "runtime tables query OK" : "runtime migration未適用または接続失敗";
+    dispatcherOk = migrationOk;
+    analyticsOk = !(await admin.from("behavior_events").select("id", { head: true, count: "exact" }).limit(1)).error;
   }
   checks.push({ key: "migration", label: "Milestone 3 migrations", ok: migrationOk, note: migrationNote });
   checks.push({ key: "storage", label: "Private Storage bucket / RLS", ok: storageOk, note: storageNote });
   checks.push({ key: "tracker", label: "Tracked link database", ok: trackerOk, note: trackerNote });
   checks.push({ key: "scheduler", label: "Scheduler heartbeat", ok: schedulerOk, note: schedulerNote });
+  checks.push({ key: "dispatcher", label: "Dispatcher state transition", ok: dispatcherOk, note: dispatcherOk ? "runtime dispatcher available" : "dispatcher DB未確認" });
+  checks.push({ key: "analytics", label: "Analytics database query", ok: analyticsOk, note: analyticsOk ? "analytics tables query available" : "analytics query未確認" });
+  checks.push({ key: "allowlist", label: "Controlled launch test allowlist", ok: env.MOCK_LINE_API || env.LINE_TEST_USER_IDS.length > 0, note: env.MOCK_LINE_API ? "Mock mode" : env.LINE_TEST_USER_IDS.length ? "configured" : "LINE_TEST_USER_IDS未設定" });
+  checks.push({ key: "ci-e2e", label: "CI E2E result", ok: false, note: "GitHub Actionsの実行結果を人間が確認" });
   checks.push({ key: "backup", label: "Backup / rollback human confirmation", ok: false, note: "人間の記録が必要" });
   checks.push({ key: "e2e", label: "Critical E2E", ok: false, note: "未完了の場合はローンチ阻害" });
 
