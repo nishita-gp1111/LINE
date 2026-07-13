@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getContact, listContactMessages } from "@/lib/contacts/queries";
+import { FoundationContactClient } from "./foundation-contact-client";
 
 function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) : "—";
@@ -52,6 +53,8 @@ export default async function ContactDetailPage({
             <code className="mt-3 block break-all text-xs text-ink/65">{contact.lineUserId}</code>
           </details>
         </section>
+
+        <FoundationContactClient contactId={contact.id} />
 
         <section className="mt-6 rounded-xl border border-line bg-white p-6">
           <h2 className="text-lg font-black">受信メッセージ（直近50件）</h2>
