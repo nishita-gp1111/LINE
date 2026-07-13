@@ -117,3 +117,31 @@ export function createLinePushClient(): LinePushClient {
   if (!env.LINE_CHANNEL_ACCESS_TOKEN) throw new LineSendConfigurationError("LINE_CHANNEL_ACCESS_TOKENが設定されていません。");
   return new LiveLinePushClient(env.LINE_CHANNEL_ACCESS_TOKEN);
 }
+
+export type LineMulticastInput = { lineUserIds: string[]; messages: Array<Record<string, unknown>>; retryKey: string };
+export type LineMulticastResult = { accepted: boolean; retryable: boolean; httpStatus: number | null; lineRequestId: string | null; safeMessage?: string };
+
+export interface LineMulticastClient { multicast(input: LineMulticastInput): Promise<LineMulticastResult>; }
+
+export class MockLineMulticastClient implements LineMulticastClient {
+  async multicast(input: LineMulticastInput): Promise<LineMulticastResult> {
+    return { accepted: input.lineUserIds.length > 0 && input.messages.length > 0, retryable: false, httpStatus: 200, lineRequestId: `mock-multicast-${input.retryKey.slice(0, 8)}` };
+  }
+}
+
+export class LiveLineMulticastClient implements LineMulticastClient {
+  constructor(private readonly accessToken: string) {}
+  async multicast(input: LineMulticastInput): Promise<LineMulticastResult> {
+    const response = await fetch("https://api.line.me/v2/bot/message/multicast", { method: "POST", redirect: "error", headers: { Authorization: `Bearer ${this.accessToken}`, "Content-Type": "application/json", "X-Line-Retry-Key": input.retryKey }, body: JSON.stringify({ to: input.lineUserIds, messages: input.messages }) });
+    const lineRequestId = response.headers.get("x-line-request-id");
+    if (response.status === 200 || response.status === 409) return { accepted: true, retryable: false, httpStatus: response.status, lineRequestId };
+    return { accepted: false, retryable: response.status === 429 || response.status >= 500, httpStatus: response.status, lineRequestId, safeMessage: response.status === 429 ? "LINE quota/rate limitです。" : "LINE multicastが拒否されました。" };
+  }
+}
+
+export function createLineMulticastClient(): LineMulticastClient {
+  const env = getServerEnv();
+  if (env.MOCK_LINE_API) return new MockLineMulticastClient();
+  if (!env.LINE_CHANNEL_ACCESS_TOKEN) throw new LineSendConfigurationError("LINE_CHANNEL_ACCESS_TOKENが設定されていません。");
+  return new LiveLineMulticastClient(env.LINE_CHANNEL_ACCESS_TOKEN);
+}
