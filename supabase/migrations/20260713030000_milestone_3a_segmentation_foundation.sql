@@ -12,13 +12,14 @@ create table public.tag_groups (
   created_by_profile_id uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  unique (organization_id, id),
   unique (organization_id, name)
 );
 
 create table public.tags (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
-  tag_group_id uuid references public.tag_groups(id) on delete set null,
+  tag_group_id uuid,
   name text not null check (char_length(btrim(name)) between 1 and 100),
   description text not null default '' check (char_length(description) <= 500),
   color_token text not null default 'moss' check (color_token ~ '^[a-z0-9-]{1,40}$'),
@@ -28,7 +29,9 @@ create table public.tags (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (organization_id, id),
-  foreign key (organization_id, tag_group_id) references public.tag_groups(organization_id, id)
+  foreign key (organization_id, tag_group_id)
+    references public.tag_groups(organization_id, id)
+    on delete no action
 );
 create unique index tags_active_name_idx on public.tags (organization_id, lower(name)) where is_active;
 create index tags_group_idx on public.tags (organization_id, tag_group_id, sort_order);
@@ -70,6 +73,7 @@ create table public.custom_field_definitions (
   created_by_profile_id uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  unique (organization_id, id),
   unique (organization_id, key)
 );
 create index custom_field_definitions_segmentable_idx on public.custom_field_definitions (organization_id, is_active, is_segmentable, sort_order);
@@ -78,7 +82,7 @@ create table public.contact_custom_values (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
   contact_id uuid not null,
-  field_id uuid not null references public.custom_field_definitions(id) on delete restrict,
+  field_id uuid not null,
   value_text text,
   value_number numeric,
   value_boolean boolean,
@@ -124,6 +128,7 @@ create table public.segments (
   created_by_profile_id uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  unique (organization_id, id),
   unique (organization_id, name)
 );
 create index segments_organization_status_idx on public.segments (organization_id, status, updated_at desc);

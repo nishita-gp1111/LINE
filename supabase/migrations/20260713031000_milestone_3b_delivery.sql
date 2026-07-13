@@ -4,35 +4,40 @@ create table public.media_assets (
   id uuid primary key default gen_random_uuid(), organization_id uuid not null references public.organizations(id) on delete cascade,
   asset_type text not null check (asset_type in ('image','video','audio','preview_image')), name text not null check (char_length(btrim(name)) between 1 and 200),
   storage_bucket text not null default 'line-public-media', storage_path text not null, public_url text not null,
-  preview_asset_id uuid references public.media_assets(id) on delete set null, mime_type text not null, size_bytes bigint not null check (size_bytes > 0),
+  preview_asset_id uuid, mime_type text not null, size_bytes bigint not null check (size_bytes > 0),
   duration_ms integer check (duration_ms is null or duration_ms > 0), width integer, height integer, checksum_sha256 text,
   status text not null default 'uploading' check (status in ('uploading','ready','rejected','deleted')),
   uploaded_by_profile_id uuid references public.profiles(id) on delete set null, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), deleted_at timestamptz,
-  unique (organization_id, id), unique (organization_id, storage_path)
+  unique (organization_id, id), unique (organization_id, storage_path),
+  foreign key (organization_id, preview_asset_id) references public.media_assets(organization_id, id) on delete no action
 );
 create index media_assets_org_status_idx on public.media_assets (organization_id, status, created_at desc);
 
 create table public.message_templates (
   id uuid primary key default gen_random_uuid(), organization_id uuid not null references public.organizations(id) on delete cascade,
   name text not null check (char_length(btrim(name)) between 1 and 100), description text not null default '', status text not null default 'active' check (status in ('active','inactive')),
-  created_by_profile_id uuid references public.profiles(id) on delete set null, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique (organization_id, name)
+  created_by_profile_id uuid references public.profiles(id) on delete set null, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique (organization_id, id), unique (organization_id, name)
 );
 create table public.message_template_items (
   id uuid primary key default gen_random_uuid(), organization_id uuid not null references public.organizations(id) on delete cascade, template_id uuid not null,
   item_order integer not null check (item_order between 0 and 4), message_type text not null check (message_type in ('text','image','video','audio')),
-  text_content text, media_asset_id uuid references public.media_assets(id) on delete restrict, payload_json jsonb not null default '{}'::jsonb, alt_text text,
-  created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique (organization_id, template_id, item_order), foreign key (organization_id, template_id) references public.message_templates(organization_id, id) on delete cascade
+  text_content text, media_asset_id uuid, payload_json jsonb not null default '{}'::jsonb, alt_text text,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now(), unique (organization_id, template_id, item_order),
+  foreign key (organization_id, template_id) references public.message_templates(organization_id, id) on delete cascade,
+  foreign key (organization_id, media_asset_id) references public.media_assets(organization_id, id) on delete no action
 );
 create index message_template_items_template_idx on public.message_template_items (organization_id, template_id, item_order);
 
 create table public.campaigns (
   id uuid primary key default gen_random_uuid(), organization_id uuid not null references public.organizations(id) on delete cascade, name text not null check (char_length(btrim(name)) between 1 and 150), description text not null default '',
   status text not null default 'draft' check (status in ('draft','validating','ready','approved','scheduled','preparing','sending','completed','partially_failed','paused_quota','paused_manual','cancelled','failed')),
-  delivery_mode text not null default 'multicast' check (delivery_mode in ('multicast','broadcast')), segment_id uuid references public.segments(id) on delete set null,
+  delivery_mode text not null default 'multicast' check (delivery_mode in ('multicast','broadcast')), segment_id uuid,
   message_snapshot_json jsonb not null default '[]'::jsonb, scheduled_at timestamptz, approved_at timestamptz, approved_by_profile_id uuid references public.profiles(id) on delete set null,
   estimated_recipients integer not null default 0 check (estimated_recipients >= 0), excluded_recipients integer not null default 0 check (excluded_recipients >= 0), accepted_recipients integer not null default 0 check (accepted_recipients >= 0), failed_batches integer not null default 0 check (failed_batches >= 0),
   quota_total_snapshot integer, quota_used_snapshot integer, reserve_percent_snapshot integer not null default 3, started_at timestamptz, completed_at timestamptz, cancelled_at timestamptz,
-  created_by_profile_id uuid references public.profiles(id) on delete set null, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+  created_by_profile_id uuid references public.profiles(id) on delete set null, created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  unique (organization_id, id),
+  foreign key (organization_id, segment_id) references public.segments(organization_id, id) on delete no action
 );
 create index campaigns_org_status_schedule_idx on public.campaigns (organization_id, status, scheduled_at);
 
