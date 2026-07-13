@@ -76,7 +76,7 @@ async function lineApiCheck(
   fetchImpl: typeof fetch
 ): Promise<ConnectionCheck> {
   if (config.mode === "mock") {
-    return { status: "ok", detail: "mock modeのため、実LINE APIへの認証確認はスキップしました。" };
+    return { status: "skip", detail: "mock modeのため、実LINE APIへの認証確認は対象外です。" };
   }
   if (!config.channelAccessToken) {
     return { status: "ng", detail: "LINE_CHANNEL_ACCESS_TOKENが未設定です。" };
@@ -176,7 +176,7 @@ export async function runLineConnectionTest(
     signatureProtection: webhookChecks.signatureProtection
   };
   return {
-    ok: [checks.environment, checks.lineApi, checks.webhook].every((check) => check.status === "ok"),
+    ok: [checks.environment, checks.webhook, ...(config.mode === "live" ? [checks.lineApi] : [])].every((check) => check.status === "ok"),
     environment: config.environment,
     mode: config.mode,
     checks

@@ -106,7 +106,7 @@ describe("LINE connection test", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(result.checks.lineApi.detail).toContain("mock mode");
+    expect(result.checks.lineApi.status).toBe("skip");
     expect(result.checks.webhook.status).toBe("ok");
     expect(result.checks.signatureProtection.status).toBe("skip");
     expect(requests).toHaveLength(1);
