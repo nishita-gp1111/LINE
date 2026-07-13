@@ -162,24 +162,39 @@ create index outbound_message_attempts_message_attempt_idx
   on public.outbound_message_attempts (message_id, attempt_number);
 
 -- Backfill conversations and message ownership without copying deleted message text.
+with message_rollup as (
+  select
+    m.organization_id,
+    m.contact_id,
+    max(m.line_event_timestamp) as line_event_timestamp,
+    max(m.line_event_timestamp) filter (where m.direction = 'inbound') as inbound_at,
+    max(m.line_event_timestamp) filter (where m.direction = 'outbound') as outbound_at,
+    (array_agg(
+      case
+        when m.status = 'deleted' then '（メッセージが送信取消されました）'
+        else left(coalesce(m.text_content, '（本文なし）'), 200)
+      end
+      order by m.line_event_timestamp desc nulls last, m.created_at desc nulls last
+    ))[1] as preview,
+    (array_agg(
+      m.direction
+      order by m.line_event_timestamp desc nulls last, m.created_at desc nulls last
+    ))[1] as direction
+  from public.messages m
+  where m.contact_id is not null
+  group by m.organization_id, m.contact_id
+)
 insert into public.conversations (organization_id, contact_id, last_message_at, last_inbound_at, last_message_preview, last_message_direction)
 select c.organization_id,
        c.id,
-       latest.line_event_timestamp,
-       latest.inbound_at,
-       latest.preview,
-       latest.direction
+       message_rollup.line_event_timestamp,
+       message_rollup.inbound_at,
+       message_rollup.preview,
+       message_rollup.direction
 from public.contacts c
-left join lateral (
-  select m.line_event_timestamp,
-         max(m.line_event_timestamp) filter (where m.direction = 'inbound') over () as inbound_at,
-         case when m.status = 'deleted' then '（メッセージが送信取消されました）' else left(coalesce(m.text_content, '（本文なし）'), 200) end as preview,
-         m.direction
-  from public.messages m
-  where m.organization_id = c.organization_id and m.contact_id = c.id
-  order by m.line_event_timestamp desc, m.created_at desc
-  limit 1
-) latest on true
+left join message_rollup
+  on message_rollup.organization_id = c.organization_id
+ and message_rollup.contact_id = c.id
 on conflict (organization_id, contact_id) do nothing;
 
 update public.messages m
@@ -189,6 +204,27 @@ where c.organization_id = m.organization_id
   and c.contact_id = m.contact_id
   and m.conversation_id is null;
 
+with latest as (
+  select
+    m.conversation_id,
+    max(m.line_event_timestamp) as line_event_timestamp,
+    max(m.line_event_timestamp) filter (where m.direction = 'inbound') as inbound_at,
+    max(m.line_event_timestamp) filter (where m.direction = 'outbound') as outbound_at,
+    (array_agg(
+      case
+        when m.status = 'deleted' then '（メッセージが送信取消されました）'
+        else left(coalesce(m.text_content, '（本文なし）'), 200)
+      end
+      order by m.line_event_timestamp desc nulls last, m.created_at desc nulls last
+    ))[1] as preview,
+    (array_agg(
+      m.direction
+      order by m.line_event_timestamp desc nulls last, m.created_at desc nulls last
+    ))[1] as direction
+  from public.messages m
+  where m.conversation_id is not null
+  group by m.conversation_id
+)
 update public.conversations c
 set last_message_at = latest.line_event_timestamp,
     last_inbound_at = latest.inbound_at,
@@ -196,16 +232,9 @@ set last_message_at = latest.line_event_timestamp,
     last_message_preview = latest.preview,
     last_message_direction = latest.direction,
     updated_at = now()
-from lateral (
-  select max(m.line_event_timestamp) as line_event_timestamp,
-         max(m.line_event_timestamp) filter (where m.direction = 'inbound') as inbound_at,
-         max(m.line_event_timestamp) filter (where m.direction = 'outbound') as outbound_at,
-         (array_agg(case when m.status = 'deleted' then '（メッセージが送信取消されました）' else left(coalesce(m.text_content, '（本文なし）'), 200) end order by m.line_event_timestamp desc, m.created_at desc))[1] as preview,
-         (array_agg(m.direction order by m.line_event_timestamp desc, m.created_at desc))[1] as direction
-  from public.messages m
-  where m.organization_id = c.organization_id and m.conversation_id = c.id
-) latest
-where latest.line_event_timestamp is not null;
+from latest
+where latest.conversation_id = c.id
+  and latest.line_event_timestamp is not null;
 
 insert into public.conversation_read_states (organization_id, conversation_id, profile_id, unread_count)
 select c.organization_id, c.id, om.profile_id,
@@ -234,6 +263,28 @@ create or replace function public.refresh_conversation_preview(target_organizati
 returns void language plpgsql security definer set search_path = public
 as $$
 begin
+  with latest as (
+    select
+      m.conversation_id,
+      max(m.line_event_timestamp) as line_event_timestamp,
+      max(m.line_event_timestamp) filter (where m.direction = 'inbound') as inbound_at,
+      max(m.line_event_timestamp) filter (where m.direction = 'outbound') as outbound_at,
+      (array_agg(
+        case
+          when m.status = 'deleted' then '（メッセージが送信取消されました）'
+          else left(coalesce(m.text_content, '（本文なし）'), 200)
+        end
+        order by m.line_event_timestamp desc nulls last, m.created_at desc nulls last
+      ))[1] as preview,
+      (array_agg(
+        m.direction
+        order by m.line_event_timestamp desc nulls last, m.created_at desc nulls last
+      ))[1] as direction
+    from public.messages m
+    where m.organization_id = target_organization_id
+      and m.conversation_id = target_conversation_id
+    group by m.conversation_id
+  )
   update public.conversations c
   set last_message_at = latest.line_event_timestamp,
       last_inbound_at = latest.inbound_at,
@@ -241,16 +292,10 @@ begin
       last_message_preview = latest.preview,
       last_message_direction = latest.direction,
       updated_at = now()
-  from lateral (
-    select max(m.line_event_timestamp) as line_event_timestamp,
-           max(m.line_event_timestamp) filter (where m.direction = 'inbound') as inbound_at,
-           max(m.line_event_timestamp) filter (where m.direction = 'outbound') as outbound_at,
-           (array_agg(case when m.status = 'deleted' then '（メッセージが送信取消されました）' else left(coalesce(m.text_content, '（本文なし）'), 200) end order by m.line_event_timestamp desc, m.created_at desc))[1] as preview,
-           (array_agg(m.direction order by m.line_event_timestamp desc, m.created_at desc))[1] as direction
-    from public.messages m
-    where m.organization_id = target_organization_id and m.conversation_id = target_conversation_id
-  ) latest
-  where c.organization_id = target_organization_id and c.id = target_conversation_id;
+  from latest
+  where latest.conversation_id = c.id
+    and c.organization_id = target_organization_id
+    and c.id = target_conversation_id;
 end;
 $$;
 
