@@ -54,7 +54,7 @@ export function validateAutoReplyRule(input: unknown): z.infer<typeof autoReplyR
   return rule;
 }
 
-type ReplyRule = z.infer<typeof autoReplyRuleSchema> & { action: string };
+type ReplyRule = z.infer<typeof autoReplyRuleSchema> & { id?: string; action: string };
 export function chooseAutoReply(input: string, rules: ReplyRule[]): ReplyRule | null {
   const normalized = normalizeKeyword(input);
   const rank: Record<ReplyRule["matchType"], number> = { exact: 0, prefix: 1, contains: 2, regex: 3 };
