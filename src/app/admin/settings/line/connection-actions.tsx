@@ -5,8 +5,17 @@ import type { ConnectionCheck, LineConnectionTestResult } from "@/lib/line/conne
 
 type Props = { webhookUrl: string };
 
-function statusLabel(status: "ok" | "ng"): string {
-  return status === "ok" ? "OK" : "NG";
+function statusLabel(status: ConnectionCheck["status"]): string {
+  if (status === "ok") return "OK";
+  if (status === "ng") return "NG";
+  if (status === "warn") return "確認要";
+  return "対象外";
+}
+
+function statusClass(status: ConnectionCheck["status"]): string {
+  if (status === "ok") return "text-moss";
+  if (status === "ng") return "text-coral";
+  return "text-ink/55";
 }
 
 export default function LineConnectionActions({ webhookUrl }: Props) {
@@ -46,9 +55,10 @@ export default function LineConnectionActions({ webhookUrl }: Props) {
 
   const checks: Array<{ label: string; check: ConnectionCheck }> = result
     ? [
-        { label: "Environment Variable確認", check: result.checks.environment },
-        { label: "LINE API認証確認", check: result.checks.lineApi },
-        { label: "Webhook URL確認", check: result.checks.webhook }
+        { label: "Environment", check: result.checks.environment },
+        { label: "LINE API", check: result.checks.lineApi },
+        { label: "Webhook到達", check: result.checks.webhook },
+        { label: "署名保護", check: result.checks.signatureProtection }
       ]
     : [];
 
@@ -59,7 +69,7 @@ export default function LineConnectionActions({ webhookUrl }: Props) {
           <p className="text-xs font-bold text-ink/50">Webhook疎通確認</p>
           <h2 className="mt-2 text-xl font-black">接続確認</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-ink/65">
-            環境変数、live modeのLINE API認証、署名付き空イベントによるWebhook URL疎通を確認します。秘密情報やLINE APIのレスポンス本文は表示しません。
+            Environment、LINE API、Webhook到達、署名保護を個別に確認します。Webhookには署名なしのプローブを送り、秘密情報やLINE APIのレスポンス本文は表示しません。
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -79,17 +89,22 @@ export default function LineConnectionActions({ webhookUrl }: Props) {
             <p className="font-black">結果: <span className={result.ok ? "text-moss" : "text-coral"}>{result.ok ? "OK" : "NG"}</span></p>
             <p className="text-xs font-bold text-ink/55">Environment: {result.environment} / {result.mode === "mock" ? "Mock Mode" : "Live Mode"}</p>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {checks.map(({ label, check }) => (
               <article key={label} className="rounded-lg border border-line bg-white p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-bold text-ink/60">{label}</p>
-                  <span className={`text-sm font-black ${check.status === "ok" ? "text-moss" : "text-coral"}`}>{statusLabel(check.status)}</span>
+                  <span className={`text-sm font-black ${statusClass(check.status)}`}>{statusLabel(check.status)}</span>
                 </div>
                 <p className="mt-2 text-xs leading-5 text-ink/65">{check.detail}</p>
               </article>
             ))}
           </div>
+          <p className="mt-4 text-xs leading-5 text-ink/60">
+            {result.mode === "live"
+              ? "Live modeの署名付き確認は、LINE Developers ConsoleのWebhook URL欄にあるVerifyを実行してください。未署名プローブのHTTP 401は署名保護として正常です。"
+              : "Mock modeではWebhook URLの到達確認のみを行い、LINE APIと署名保護の確認は対象外です。"}
+          </p>
         </div>
       ) : null}
     </section>

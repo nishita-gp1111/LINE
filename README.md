@@ -60,7 +60,7 @@ profile取得が一時失敗してもWebhook全体を落とさず、LINE user ID
 3. Basic settingsでChannel Secretを確認し、`LINE_CHANNEL_SECRET`として本番環境のsecretへ登録します。値は管理画面やログへ表示しません。
 4. Messaging API settingsでChannel access tokenを発行し、`LINE_CHANNEL_ACCESS_TOKEN`として本番環境のsecretへ登録します。Channel IDは`LINE_CHANNEL_ID`へ設定します。
 5. Webhook URL欄の「Verify」を押します。LINE Platformは署名付きの`events: []`リクエストを送り、アプリがHTTP 200を返せば疎通確認できます。
-6. 画面の「接続確認」を押すと、Environment Variable確認、live modeのLINE API認証確認、署名付きWebhook URL確認を実行できます。mock modeでは実LINE APIの認証確認を行わず、mock確認として表示します。
+6. 画面の「接続確認」を押すと、Environment、LINE API、Webhook到達、署名保護を個別に確認できます。Webhookには署名なしのプローブを送るため、live modeのHTTP 401は「Webhookは署名保護されています」と表示されます。署名付きの確認はLINE Developers Consoleの「Verify」で行ってください。mock modeではWebhook URLの到達確認だけを行います。
 7. 返信送信はMilestone 2以降のため、不要なGreeting messages / Auto-reply messagesはOFFにします。
 
 公式手順: [Verify webhook URL](https://developers.line.biz/en/docs/messaging-api/verify-webhook-url/)、[Receive messages (webhook)](https://developers.line.biz/en/docs/messaging-api/receiving-messages/)、[Verify webhook signature](https://developers.line.biz/en/docs/messaging-api/verify-webhook-signature/)。

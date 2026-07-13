@@ -70,7 +70,7 @@ export default async function LineSettingsPage() {
             <p className="text-xs font-bold text-ink/50">接続状態</p>
             <p className="mt-2 font-bold">
               {env.MOCK_LINE_API
-                ? "mock modeで署名検証・Webhook処理を確認できます。"
+                ? "mock modeでWebhook処理を確認できます。接続確認はURL到達のみ行います。"
                 : liveReady
                   ? "設定済み（接続テストによるメッセージ送信は行っていません）"
                   : "LINE環境変数が不足しています。"}
@@ -87,8 +87,8 @@ export default async function LineSettingsPage() {
             <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-6 text-ink/75">
               <li>対象ProviderのMessaging API channelを開き、Messaging APIタブを表示します。</li>
               <li>Webhook URLに上記URLを登録し、「Use webhook」を有効にします。</li>
-              <li>Webhook URL欄の「Verify」を押します。LINE Platformが署名付きの空イベントを送り、HTTP 200を確認します。</li>
-              <li>この画面の「接続確認」で、環境変数・LINE API認証・Webhook URLを再確認します。</li>
+              <li>Webhook URL欄の「Verify」を押します。LINE Platformが署名付きリクエストを送り、HTTP 200を確認します。</li>
+              <li>この画面の「接続確認」で、Environment・LINE API・Webhook到達・署名保護を個別に確認します。HTTP 401は署名保護として扱います。</li>
             </ol>
             <a className="mt-5 inline-block text-sm font-bold text-moss hover:underline" href="https://developers.line.biz/en/docs/messaging-api/verify-webhook-url/" target="_blank" rel="noreferrer">
               LINE公式: Verify webhook URL →

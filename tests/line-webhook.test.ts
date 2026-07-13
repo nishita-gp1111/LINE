@@ -90,31 +90,31 @@ describe("LINE profile lookup", () => {
 });
 
 describe("LINE connection test", () => {
-  it("reports mock mode and checks the signed webhook without exposing secrets", async () => {
+  it("checks mock webhook reachability without sending a signature", async () => {
     const requests: Array<{ url: string; signature: string | null }> = [];
     const result = await runLineConnectionTest(
       {
         environment: "development",
         mode: "mock",
         appUrl: "http://127.0.0.1:3000",
-        channelSecret: secret
       },
       async (url, init) => {
         const requestUrl = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
         requests.push({ url: requestUrl, signature: new Headers(init?.headers).get("x-line-signature") });
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        return new Response(JSON.stringify({ ok: true }), { status: 401 });
       }
     );
 
     expect(result.ok).toBe(true);
     expect(result.checks.lineApi.detail).toContain("mock mode");
     expect(result.checks.webhook.status).toBe("ok");
+    expect(result.checks.signatureProtection.status).toBe("skip");
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.signature).toBeTruthy();
+    expect(requests[0]?.signature).toBeNull();
     expect(JSON.stringify(result)).not.toContain(secret);
   });
 
-  it("reports live API authentication and webhook failures as NG", async () => {
+  it("treats an unsigned live webhook response of 401 as protected", async () => {
     const result = await runLineConnectionTest(
       {
         environment: "production",
@@ -127,13 +127,36 @@ describe("LINE connection test", () => {
       },
       async (url) => {
         const requestUrl = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
-        return new Response(null, { status: requestUrl.includes("api.line.me") ? 401 : 503 });
+        return new Response(null, { status: 401 });
       }
     );
 
     expect(result.ok).toBe(false);
     expect(result.checks.environment.status).toBe("ok");
     expect(result.checks.lineApi.status).toBe("ng");
+    expect(result.checks.webhook.status).toBe("ok");
+    expect(result.checks.signatureProtection.status).toBe("ok");
+    expect(result.checks.signatureProtection.detail).toContain("署名保護されています");
+  });
+
+  it.each([404, 500])("treats HTTP %i as a webhook failure", async (webhookStatus) => {
+    const result = await runLineConnectionTest(
+      {
+        environment: "production",
+        mode: "live",
+        appUrl: "https://crm.example.com",
+        organizationId,
+        channelId: "1234567890",
+        channelSecret: secret,
+        channelAccessToken: "test-access-token"
+      },
+      async (url) => {
+        const requestUrl = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+        return new Response(null, { status: requestUrl.includes("api.line.me") ? 200 : webhookStatus });
+      }
+    );
+
+    expect(result.ok).toBe(false);
     expect(result.checks.webhook.status).toBe("ng");
   });
 });
