@@ -24,6 +24,9 @@ export async function resolveTrackedLink(slug: string): Promise<TrackedLink | nu
   return { id: String(data.id), slug: String(data.slug), destinationUrl: String(data.destination_url), sourceId: data.source_id ? String(data.source_id) : null, isActive: Boolean(data.is_active) };
 }
 
+export function listMockTrackedLinks(): TrackedLink[] { return [...mockLinks.values()]; }
+export function createMockTrackedLink(input: { slug: string; destinationUrl: string; sourceId?: string | null }): TrackedLink { const url = validateTrackingDestination(input.destinationUrl); if (mockLinks.has(input.slug)) throw new Error("同じslugは作成できません。"); const link = { id: `mock-link-${mockLinks.size + 1}`, slug: input.slug, destinationUrl: url.toString(), sourceId: input.sourceId ?? null, isActive: true }; mockLinks.set(link.slug, link); return link; }
+
 export async function recordTrackedClick(input: { link: TrackedLink; token?: string | null; now?: string }): Promise<Click> {
   const env = getServerEnv();
   const now = input.now ?? new Date().toISOString();
