@@ -39,6 +39,12 @@ const idAllowlist = z
   .default("")
   .transform((value) => value.split(",").map((item) => item.trim()).filter(Boolean));
 
+const sha256Allowlist = z
+  .string()
+  .default("")
+  .transform((value) => value.split(",").map((item) => item.trim().toLowerCase()).filter(Boolean))
+  .refine((values) => values.every((value) => /^[0-9a-f]{64}$/.test(value)), "SHA-256 hash must be 64 lowercase hexadecimal characters");
+
 export const envSchema = z.object({
   NEXT_PUBLIC_AUTH_MODE: z.enum(["auto", "mock"]).default("auto"),
   NEXT_PUBLIC_APP_URL: optionalUrl,
@@ -56,6 +62,7 @@ export const envSchema = z.object({
   LINE_RICH_MENU_MUTATION_ENABLED: booleanEnv(false),
   LINE_TRACKING_ENABLED: booleanEnv(true),
   LINE_TEST_USER_IDS: idAllowlist,
+  LINE_TEST_USER_HASHES: sha256Allowlist,
   ADMIN_EMAIL_ALLOWLIST: emailAllowlist,
 
   NEXT_PUBLIC_SUPABASE_URL: optionalUrl,
@@ -67,6 +74,8 @@ export const envSchema = z.object({
   LINE_CHANNEL_ID: optionalText,
   LINE_CHANNEL_SECRET: optionalText,
   LINE_CHANNEL_ACCESS_TOKEN: optionalText,
+  LINE_EXPECTED_BASIC_ID: optionalText,
+  LINE_EXPECTED_DISPLAY_NAME: optionalText,
   LINE_ADMIN_USER_ID: optionalText,
   NEXT_PUBLIC_LIFF_ID: optionalText,
   LINE_LOGIN_CHANNEL_ID: optionalText,

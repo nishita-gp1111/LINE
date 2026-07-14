@@ -20,5 +20,6 @@ describe("Milestone 3 runtime", () => {
     expect(env.LINE_BULK_SEND_ENABLED).toBe(false);
     expect(env.LINE_RICH_MENU_MUTATION_ENABLED).toBe(false);
     expect(env.LINE_TEST_USER_IDS).toEqual([]);
+    expect(env.LINE_TEST_USER_HASHES).toEqual([]);
   });
 });

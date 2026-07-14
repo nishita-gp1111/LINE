@@ -16,6 +16,7 @@ declare namespace NodeJS {
     LINE_RICH_MENU_MUTATION_ENABLED?: "true" | "false";
     LINE_TRACKING_ENABLED?: "true" | "false";
     LINE_TEST_USER_IDS?: string;
+    LINE_TEST_USER_HASHES?: string;
     ADMIN_EMAIL_ALLOWLIST?: string;
 
     NEXT_PUBLIC_SUPABASE_URL?: string;
@@ -27,6 +28,8 @@ declare namespace NodeJS {
     LINE_CHANNEL_ID?: string;
     LINE_CHANNEL_SECRET?: string;
     LINE_CHANNEL_ACCESS_TOKEN?: string;
+    LINE_EXPECTED_BASIC_ID?: string;
+    LINE_EXPECTED_DISPLAY_NAME?: string;
     LINE_ADMIN_USER_ID?: string;
     NEXT_PUBLIC_LIFF_ID?: string;
     LINE_LOGIN_CHANNEL_ID?: string;

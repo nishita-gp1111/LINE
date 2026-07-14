@@ -18,7 +18,9 @@ export async function POST() {
       organizationId: env.LINE_ORGANIZATION_ID,
       channelId: env.LINE_CHANNEL_ID,
       channelSecret: env.LINE_CHANNEL_SECRET,
-      channelAccessToken: env.LINE_CHANNEL_ACCESS_TOKEN
+      channelAccessToken: env.LINE_CHANNEL_ACCESS_TOKEN,
+      expectedBasicId: env.LINE_EXPECTED_BASIC_ID,
+      expectedDisplayName: env.LINE_EXPECTED_DISPLAY_NAME
     });
     return NextResponse.json(result);
   } catch {

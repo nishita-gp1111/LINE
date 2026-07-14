@@ -86,9 +86,9 @@ export default async function LineSettingsPage() {
             <h2 className="mt-2 text-xl font-black">LINE Developers Consoleでの確認</h2>
             <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-6 text-ink/75">
               <li>対象ProviderのMessaging API channelを開き、Messaging APIタブを表示します。</li>
-              <li>Webhook URLに上記URLを登録し、「Use webhook」を有効にします。</li>
+              <li>本番コード・DB・環境変数の準備完了後にだけ、Webhook URLへ上記URLを登録し、「Use webhook」を有効にします。</li>
               <li>Webhook URL欄の「Verify」を押します。LINE Platformが署名付きリクエストを送り、HTTP 200を確認します。</li>
-              <li>この画面の「接続確認」で、Environment・LINE API・Webhook到達・署名保護を個別に確認します。HTTP 401は署名保護として扱います。</li>
+              <li>この画面の「接続確認」で、接続先アカウント、未署名401、不正署名401、正しい署名200まで個別に確認します。</li>
             </ol>
             <a className="mt-5 inline-block text-sm font-bold text-moss hover:underline" href="https://developers.line.biz/en/docs/messaging-api/verify-webhook-url/" target="_blank" rel="noreferrer">
               LINE公式: Verify webhook URL →
@@ -96,13 +96,13 @@ export default async function LineSettingsPage() {
           </article>
           <article className="rounded-xl border border-line bg-white p-6">
             <p className="text-xs font-bold text-ink/50">LINE Developers Consoleで設定する内容</p>
-            <h2 className="mt-2 text-xl font-black">Milestone 1の推奨設定</h2>
+            <h2 className="mt-2 text-xl font-black">Minimum Production Launch設定</h2>
             <ul className="mt-4 list-disc space-y-3 pl-5 text-sm leading-6 text-ink/75">
               <li>Messaging APIタブ: Webhook URLを設定し、「Use webhook」をONにします。</li>
               <li>再送を利用する場合は「Webhook redelivery」をONにします。本システムはwebhookEventIdで重複排除します。</li>
               <li>Basic settings: Channel Secretを本番環境のsecretへ登録します。画面には値を表示しません。</li>
               <li>Messaging API settings: Channel access tokenを発行し、本番環境のsecretへ登録します。</li>
-              <li>返信処理はMilestone 2以降のため、不要なGreeting messages / Auto-reply messagesはOFFにします。</li>
+              <li>CRM側の個別処理と重複しないよう、Greeting messages / Auto-reply messagesはOFFにします。</li>
             </ul>
             <a className="mt-5 inline-block text-sm font-bold text-moss hover:underline" href="https://developers.line.biz/en/docs/messaging-api/receiving-messages/" target="_blank" rel="noreferrer">
               LINE公式: Receive messages (webhook) →

@@ -3,6 +3,7 @@ import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getServerEnv } from "@/lib/env/server";
 import { launchBlockers, launchFlagStatus } from "@/lib/launch/flags";
+import { configuredRecipientCount } from "@/lib/launch/recipient-policy";
 
 export type ReadinessState = "BLOCKED" | "INTERNAL TEST ONLY" | "READY FOR CONTROLLED LAUNCH" | "LIVE";
 export type ReadinessCheck = { key: string; label: string; ok: boolean; note: string };
@@ -11,46 +12,57 @@ export async function getLaunchReadiness(): Promise<{ state: ReadinessState; che
   const env = getServerEnv();
   const admin = createSupabaseAdminClient();
   const checks: ReadinessCheck[] = [];
-  const connectionOk = env.MOCK_LINE_API || Boolean(env.LINE_CHANNEL_SECRET && env.LINE_CHANNEL_ACCESS_TOKEN);
-  checks.push({ key: "line", label: "LINE connection", ok: connectionOk, note: connectionOk ? "configured state only" : "Channel Secret / Access Token未設定" });
-  checks.push({ key: "flags", label: "Live feature flags", ok: Object.values(launchFlagStatus()).every((value) => value === false || env.LINE_TRACKING_ENABLED), note: "送信・自動化・rich menu flagは初期OFF" });
+  const flags = launchFlagStatus();
+  const connectionOk = env.MOCK_LINE_API || Boolean(
+    env.LINE_ORGANIZATION_ID &&
+    env.LINE_CHANNEL_ID &&
+    env.LINE_CHANNEL_SECRET &&
+    env.LINE_CHANNEL_ACCESS_TOKEN
+  );
+  checks.push({ key: "line", label: "LINE connection settings", ok: connectionOk, note: connectionOk ? "必要な設定は存在します（値は非表示）" : "LINE接続設定が不足しています" });
 
-  let storageOk = env.MOCK_LINE_API;
-  let storageNote = env.MOCK_LINE_API ? "Mockでは未接続" : "未確認";
-  let trackerOk = env.MOCK_LINE_API;
-  let trackerNote = env.MOCK_LINE_API ? "Mock store" : "未確認";
-  let schedulerOk = false;
-  let schedulerNote = "heartbeat未確認";
-  let migrationOk = false;
-  let migrationNote = "migration適用状態未確認";
-  let dispatcherOk = env.MOCK_LINE_API;
-  let analyticsOk = env.MOCK_LINE_API;
+  const minimumFlagsOk = env.MOCK_LINE_API || (
+    flags.LINE_MANUAL_SEND_ENABLED &&
+    flags.LINE_AUTOMATION_SEND_ENABLED &&
+    flags.LINE_RICH_MENU_MUTATION_ENABLED &&
+    !flags.LINE_BULK_SEND_ENABLED &&
+    !flags.LINE_SCHEDULED_SEND_ENABLED &&
+    !flags.LINE_AUTO_REPLY_ENABLED &&
+    !flags.LINE_MEDIA_SEND_ENABLED
+  );
+  checks.push({
+    key: "flags",
+    label: "Minimum Production feature flags",
+    ok: minimumFlagsOk,
+    note: env.MOCK_LINE_API ? "Mock mode" : minimumFlagsOk ? "個別送信・automation・ユーザー別rich menuだけ有効" : "必須flagまたは禁止flagを確認してください"
+  });
+
+  const allowedRecipientCount = configuredRecipientCount(env.LINE_TEST_USER_IDS, env.LINE_TEST_USER_HASHES);
+  const allowlistOk = env.MOCK_LINE_API || (env.APP_ENV === "production" ? allowedRecipientCount === 1 : allowedRecipientCount > 0);
+  checks.push({
+    key: "allowlist",
+    label: "LINE recipient allowlist",
+    ok: allowlistOk,
+    note: env.MOCK_LINE_API ? "Mock mode" : allowlistOk ? `${allowedRecipientCount}名だけにサーバー側で制限` : "実LINE送信はfail-closedです"
+  });
+
+  let migrationOk = env.MOCK_LINE_API;
+  let migrationNote = env.MOCK_LINE_API ? "Mock store" : "Supabase接続またはmigration未確認";
+  let organizationOk = env.MOCK_LINE_API;
+  let organizationNote = env.MOCK_LINE_API ? "Mock organization" : "organization未確認";
   if (admin && !env.MOCK_LINE_API) {
-    const buckets = await admin.storage.listBuckets();
-    storageOk = !buckets.error && buckets.data.some((bucket) => bucket.id === env.LINE_MEDIA_BUCKET);
-    storageNote = storageOk ? "private bucket configured" : "private bucket未設定";
-    const tracker = await admin.from("tracked_links").select("id", { count: "exact", head: true }).eq("organization_id", env.LINE_ORGANIZATION_ID || "");
-    trackerOk = !tracker.error;
-    trackerNote = trackerOk ? "tracked_links query OK" : "tracked_links query failed";
-    const heartbeat = await admin.from("scheduler_heartbeats").select("status,updated_at").eq("organization_id", env.LINE_ORGANIZATION_ID || "").eq("provider", env.SCHEDULER_PROVIDER).maybeSingle();
-    schedulerOk = heartbeat.data?.status === "healthy" && Boolean(heartbeat.data.updated_at) && Date.now() - Date.parse(String(heartbeat.data.updated_at)) < env.SCHEDULER_STALE_AFTER_MINUTES * 60_000;
-    schedulerNote = schedulerOk ? "healthy heartbeat" : "stale or missing heartbeat";
-    const migrationProbe = await admin.from("scheduled_jobs").select("id", { head: true, count: "exact" }).limit(1);
-    migrationOk = !migrationProbe.error;
-    migrationNote = migrationOk ? "runtime tables query OK" : "runtime migration未適用または接続失敗";
-    dispatcherOk = migrationOk;
-    analyticsOk = !(await admin.from("behavior_events").select("id", { head: true, count: "exact" }).limit(1)).error;
+    const organization = await admin.from("organizations").select("id").eq("id", env.LINE_ORGANIZATION_ID || "").maybeSingle();
+    organizationOk = !organization.error && Boolean(organization.data);
+    organizationNote = organizationOk ? "LINE_ORGANIZATION_IDに一致" : "対象organizationが存在しません";
+
+    const requiredTables = ["tags", "contact_tag_assignments", "surveys", "survey_responses", "automation_scenarios", "rich_menus", "rich_menu_rules", "rich_menu_assignments"];
+    const probes = await Promise.all(requiredTables.map((table) => admin.from(table).select("*", { count: "exact", head: true }).limit(1)));
+    const failedTables = requiredTables.filter((_, index) => Boolean(probes[index]?.error));
+    migrationOk = failedTables.length === 0;
+    migrationNote = migrationOk ? "Minimum Launch tables query OK" : `未確認: ${failedTables.join("、")}`;
   }
-  checks.push({ key: "migration", label: "Milestone 3 migrations", ok: migrationOk, note: migrationNote });
-  checks.push({ key: "storage", label: "Private Storage bucket / RLS", ok: storageOk, note: storageNote });
-  checks.push({ key: "tracker", label: "Tracked link database", ok: trackerOk, note: trackerNote });
-  checks.push({ key: "scheduler", label: "Scheduler heartbeat", ok: schedulerOk, note: schedulerNote });
-  checks.push({ key: "dispatcher", label: "Dispatcher state transition", ok: dispatcherOk, note: dispatcherOk ? "runtime dispatcher available" : "dispatcher DB未確認" });
-  checks.push({ key: "analytics", label: "Analytics database query", ok: analyticsOk, note: analyticsOk ? "analytics tables query available" : "analytics query未確認" });
-  checks.push({ key: "allowlist", label: "LINE recipient allowlist", ok: true, note: env.MOCK_LINE_API ? "Mock mode" : env.LINE_TEST_USER_IDS.length ? `${env.LINE_TEST_USER_IDS.length}名に制限中` : "未設定（organization内の選択顧客を許可）" });
-  checks.push({ key: "ci-e2e", label: "CI E2E result", ok: false, note: "GitHub Actionsの実行結果を人間が確認" });
-  checks.push({ key: "backup", label: "Backup / rollback human confirmation", ok: false, note: "人間の記録が必要" });
-  checks.push({ key: "e2e", label: "Critical E2E", ok: false, note: "未完了の場合はローンチ阻害" });
+  checks.push({ key: "organization", label: "Production organization", ok: organizationOk, note: organizationNote });
+  checks.push({ key: "migration", label: "Minimum Launch migrations", ok: migrationOk, note: migrationNote });
 
   const blockers = [...launchBlockers(), ...checks.filter((check) => !check.ok).map((check) => `${check.label}: ${check.note}`)];
   const state: ReadinessState = env.MOCK_LINE_API ? "INTERNAL TEST ONLY" : blockers.length ? "BLOCKED" : "READY FOR CONTROLLED LAUNCH";

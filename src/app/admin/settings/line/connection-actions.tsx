@@ -57,8 +57,11 @@ export default function LineConnectionActions({ webhookUrl }: Props) {
     ? [
         { label: "Environment", check: result.checks.environment },
         { label: "LINE API", check: result.checks.lineApi },
+        { label: "接続先アカウント", check: result.checks.botIdentity },
         { label: "Webhook到達", check: result.checks.webhook },
-        { label: "署名保護", check: result.checks.signatureProtection }
+        { label: "未署名拒否", check: result.checks.unsignedSignature },
+        { label: "不正署名拒否", check: result.checks.invalidSignature },
+        { label: "正しい署名", check: result.checks.validSignature }
       ]
     : [];
 
@@ -69,7 +72,7 @@ export default function LineConnectionActions({ webhookUrl }: Props) {
           <p className="text-xs font-bold text-ink/50">Webhook疎通確認</p>
           <h2 className="mt-2 text-xl font-black">接続確認</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-ink/65">
-            Environment、LINE API、Webhook到達、署名保護を個別に確認します。Webhookには署名なしのプローブを送り、秘密情報やLINE APIのレスポンス本文は表示しません。
+            Environment、接続先LINE公式アカウント、Webhook到達、未署名・不正署名の拒否、正しい署名の受理を個別に確認します。空イベントだけを使用し、メッセージは送信しません。
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -89,6 +92,9 @@ export default function LineConnectionActions({ webhookUrl }: Props) {
             <p className="font-black">結果: <span className={result.ok ? "text-moss" : "text-coral"}>{result.ok ? "OK" : "NG"}</span></p>
             <p className="text-xs font-bold text-ink/55">Environment: {result.environment} / {result.mode === "mock" ? "Mock Mode" : "Live Mode"}</p>
           </div>
+          {result.bot ? (
+            <p className="mt-3 text-sm font-bold text-ink/70">接続先: {result.bot.displayName}（{result.bot.basicId}）</p>
+          ) : null}
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {checks.map(({ label, check }) => (
               <article key={label} className="rounded-lg border border-line bg-white p-3">
@@ -102,7 +108,7 @@ export default function LineConnectionActions({ webhookUrl }: Props) {
           </div>
           <p className="mt-4 text-xs leading-5 text-ink/60">
             {result.mode === "live"
-              ? "Live modeの署名付き確認は、LINE Developers ConsoleのWebhook URL欄にあるVerifyを実行してください。未署名プローブのHTTP 401は署名保護として正常です。"
+              ? "Live modeではサーバー側で署名3パターンを確認します。最終切替時は、LINE Developers ConsoleのWebhook URL欄にあるVerifyも実行してください。"
               : "Mock modeではWebhook URLの到達確認のみを行い、LINE APIと署名保護の確認は対象外です。"}
           </p>
         </div>

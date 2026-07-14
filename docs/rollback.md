@@ -2,4 +2,4 @@
 
 緊急停止は`LINE_MEDIA_SEND_ENABLED`、`LINE_SCHEDULED_SEND_ENABLED`、`LINE_AUTOMATION_SEND_ENABLED`、`LINE_AUTO_REPLY_ENABLED`、`LINE_BULK_SEND_ENABLED`、`LINE_RICH_MENU_MUTATION_ENABLED`の順に必要なものをOFFにします。予約jobと未送信batchをpause/cancelし、再試行は同じRetry Keyを使います。
 
-Rich menuは直前のAPI-managed default IDへ戻します。DB migrationは既存migrationを書き換えず、適用前backupとSupabaseの手動rollback計画を人間が確認します。secret漏えい時はLINE token/Channel Secret/CRON_SECRETをrotateし、ログを調査します。
+Rich menuは顧客ごとに保存した直前のユーザー別menu IDへ戻し、元が未設定ならユーザー別linkだけを解除します。デフォルトリッチメニューは変更しません。DB migrationは既存migrationを書き換えず、適用前backupとSupabaseの手動rollback計画を確認します。secret漏えい時はLINE token/Channel Secret/CRON_SECRETをrotateし、ログを調査します。

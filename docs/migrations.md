@@ -13,6 +13,9 @@
 9. `20260713035000_milestone_3f_attribution_analytics.sql`
 10. `20260713036000_milestone_3g_launch_hardening.sql`
 11. `20260713037000_milestone_3h_runtime_hardening.sql`
+12. `20260714010000_minimum_internal_launch.sql`
+13. `20260714011000_minimum_internal_launch_outbound_fix.sql`
+14. `20260714012000_minimum_internal_launch_follow_survey.sql`
 
 3Aは顧客データとRLS、3Bはmedia/template/campaign/job、3Cはautomation、3Dはsurvey、3Eはrich menu、3Fはtracking/analytics、3Gはlaunch状態、3Hはprivate Storage/RLSとruntime RPCを追加します。既存テーブルのbackfillは3A〜3Bに限定し、3Hは既存migrationを変更しません。
 
@@ -24,6 +27,6 @@
 npx supabase db push --dry-run
 ```
 
-適用後は `select count(*) from public.scheduled_jobs;`、`select * from public.scheduler_heartbeats;`、`select id,public from storage.buckets where id = 'line-media';`、`select jobid,jobname,active from cron.job where jobname like 'line-crm-%';` を人間が確認します。
+Minimum Production Launchでは、適用後に`tags`、`contact_tag_assignments`、`surveys`、`survey_responses`、`automation_scenarios`、`rich_menus`、`rich_menu_rules`、`rich_menu_assignments`への読み取りが成功することを確認します。Scheduler、Cron、mediaは初回の合否対象外です。
 
 ロールバックはflag OFF→cron停止→未送信job/campaign停止→原因確認の順です。migrationを逆順に自動dropしません。Storage objectやsurvey回答、audit logを破壊する変更はrollback不能としてbackup/restore計画を先に確認します。

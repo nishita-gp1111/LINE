@@ -18,8 +18,14 @@ export function validateRichMenuDefinition(input: unknown) {
 }
 
 export function assertRichMenuMutation(input: { mock: boolean; enabled: boolean; role: string; isDefaultChange: boolean; confirmation: string }): void {
+  if (input.isDefaultChange) throw new Error("Minimum Production Launchではデフォルトリッチメニューを変更できません。");
   if (input.mock) return;
   if (!input.enabled) throw new Error("LINE_RICH_MENU_MUTATION_ENABLED is disabled");
   if (!["owner", "admin"].includes(input.role)) throw new Error("リッチメニュー操作権限がありません。");
-  if (input.isDefaultChange && (input.role !== "owner" || input.confirmation !== "SET_DEFAULT_RICH_MENU")) throw new Error("default変更にはownerの確認文入力が必要です。");
+}
+
+export function assertPerUserRichMenuPath(path: string): void {
+  if (/^\/v2\/bot\/user\/all\/richmenu(?:\/|$)/.test(path)) {
+    throw new Error("デフォルトリッチメニュー変更APIは使用できません。");
+  }
 }

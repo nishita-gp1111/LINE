@@ -11,6 +11,7 @@ import { sendInboxTextMessage } from "@/lib/inbox/send-service";
 import type { MessageRecord } from "@/lib/webhook/store";
 import { followSurveyClientRequestId, selectRichMenuRule, surveyResponseKey, type RichMenuRuleCandidate } from "@/lib/minimum-launch/domain";
 import { validateRichMenuImage } from "@/lib/minimum-launch/rich-menu-image";
+import { assertPerUserRichMenuPath } from "@/lib/milestone3/rich-menu";
 
 type Row = Record<string, unknown>;
 type LineAction = { type: "uri" | "message"; value: string };
@@ -29,6 +30,7 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 async function lineRequest(path: string, init: RequestInit = {}, dataApi = false): Promise<{ status: number; body: Row; headers: Headers }> {
+  assertPerUserRichMenuPath(path);
   const token = getServerEnv().LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) throw new Error("LINE_CHANNEL_ACCESS_TOKENが設定されていません。");
   const headers = new Headers(init.headers);
@@ -65,10 +67,18 @@ async function contactFor(client: SupabaseClient, organizationId: string, contac
 
 async function allowlistedContact(client: SupabaseClient, organizationId: string): Promise<Row> {
   const ids = getServerEnv().LINE_TEST_USER_IDS;
-  if (ids.length !== 1) throw new Error("送信先の顧客を選択してください。");
-  const { data, error } = await client.from("contacts").select("id, line_user_id, display_name, friend_status").eq("organization_id", organizationId).eq("line_user_id", ids[0]).maybeSingle();
-  if (error || !data) throw new Error("許可済み顧客が見つかりません。");
-  return row(data);
+  const hashes = getServerEnv().LINE_TEST_USER_HASHES;
+  if (ids.length + hashes.length !== 1) throw new Error("送信先の顧客を1名だけ設定してください。");
+  if (ids.length === 1) {
+    const { data, error } = await client.from("contacts").select("id, line_user_id, display_name, friend_status").eq("organization_id", organizationId).eq("line_user_id", ids[0]).maybeSingle();
+    if (error || !data) throw new Error("許可済み顧客が見つかりません。");
+    return row(data);
+  }
+  const { data, error } = await client.from("contacts").select("id, line_user_id, display_name, friend_status").eq("organization_id", organizationId).limit(500);
+  if (error) throw new Error("許可済み顧客を取得できませんでした。");
+  const matches = (data || []).filter((value) => recipientIsAllowed(String(row(value).line_user_id)));
+  if (matches.length !== 1) throw new Error("許可済み顧客が見つかりません。");
+  return row(matches[0]);
 }
 
 async function resolveContact(client: SupabaseClient, organizationId: string, contactId?: string): Promise<Row> {
