@@ -1,6 +1,42 @@
 "use client";
-/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
 import { useEffect, useState } from "react";
-type Tag = { id: string; name: string }; type Assignment = { id: string; contactId: string; tagId: string; sourceType: string }; type Field = { id: string; name: string; fieldType: string; options: string[] };
-export function FoundationContactClient({ contactId }: { contactId: string }) { const [tags, setTags] = useState<Tag[]>([]); const [assignments, setAssignments] = useState<Assignment[]>([]); const [fields, setFields] = useState<Field[]>([]); const [selectedTag, setSelectedTag] = useState(""); const [message, setMessage] = useState(""); async function load() { const [tagResponse, fieldResponse] = await Promise.all([fetch("/api/milestone3/foundation?resource=tags"), fetch("/api/milestone3/foundation?resource=fields")]); const tagData = await tagResponse.json() as { tags?: Tag[]; assignments?: Assignment[] }; const fieldData = await fieldResponse.json() as { fields?: Field[] }; setTags(tagData.tags ?? []); setAssignments((tagData.assignments ?? []).filter((item) => item.contactId === contactId)); setFields(fieldData.fields ?? []); } useEffect(() => { void load(); }, [contactId]); async function assign() { const response = await fetch("/api/milestone3/foundation", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "tag_assign", contactId, tagId: selectedTag, sourceType: "manual" }) }); const data = await response.json() as { error?: string }; setMessage(data.error || "手動タグを付与しました。"); if (!data.error) { setSelectedTag(""); await load(); } } async function remove(id: string) { const response = await fetch("/api/milestone3/foundation", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "tag_remove", assignmentId: id }) }); const data = await response.json() as { error?: string }; setMessage(data.error || "付与元を解除しました。"); if (!data.error) await load(); } async function setValue(field: Field, value: unknown) { const response = await fetch("/api/milestone3/foundation", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "field_value", contactId, fieldId: field.id, value }) }); const data = await response.json() as { error?: string }; setMessage(data.error || `${field.name}を更新しました。`); } return <section className="mt-6 grid gap-6 md:grid-cols-2"><div className="rounded-xl border border-line bg-white p-6"><h2 className="font-black">タグ</h2><div className="mt-3 flex gap-2"><select value={selectedTag} onChange={(event) => setSelectedTag(event.target.value)} className="min-h-10 flex-1 rounded border border-line px-2 text-sm"><option value="">タグを選択</option>{tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select><button onClick={() => void assign()} disabled={!selectedTag} className="rounded bg-ink px-3 text-sm font-bold text-white disabled:opacity-40">付与</button></div><div className="mt-4 grid gap-2">{assignments.map((item) => <div key={item.id} className="flex justify-between rounded bg-paper p-2 text-sm"><span>{tags.find((tag) => tag.id === item.tagId)?.name || item.tagId} / {item.sourceType}</span><button onClick={() => void remove(item.id)} className="font-bold text-coral">解除</button></div>)}</div>{message ? <p className="mt-3 text-xs text-moss">{message}</p> : null}</div><div className="rounded-xl border border-line bg-white p-6"><h2 className="font-black">カスタム項目</h2><div className="mt-3 grid gap-3">{fields.map((field) => <label key={field.id} className="grid gap-1 text-xs font-bold">{field.name}<input onBlur={(event) => void setValue(field, event.currentTarget.value)} placeholder={field.fieldType} className="min-h-9 rounded border border-line px-2 text-sm font-normal" /></label>)}</div></div></section>; }
+import { ContactTagsPanel } from "@/components/contact-tags-panel";
+
+type Field = { id: string; name: string; fieldType: string; options: string[] };
+
+export function FoundationContactClient({ contactId }: { contactId: string }) {
+  const [fields, setFields] = useState<Field[]>([]);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    void fetch("/api/milestone3/foundation?resource=fields")
+      .then((response) => response.json())
+      .then((data: { fields?: Field[] }) => setFields(data.fields ?? []));
+  }, [contactId]);
+
+  async function setValue(field: Field, value: unknown) {
+    const response = await fetch("/api/milestone3/foundation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "field_value", contactId, fieldId: field.id, value })
+    });
+    const data = await response.json() as { error?: string };
+    setMessage(data.error || `${field.name}を更新しました。`);
+  }
+
+  return (
+    <section className="mt-6 grid gap-6 md:grid-cols-2">
+      <div className="rounded-xl border border-line bg-white p-6"><ContactTagsPanel contactId={contactId} /></div>
+      <div className="rounded-xl border border-line bg-white p-6">
+        <h2 className="font-black">カスタム項目</h2>
+        <p className="mt-1 text-xs text-ink/45">顧客固有の補足情報を保存します。</p>
+        <div className="mt-4 grid gap-3">
+          {fields.map((field) => <label key={field.id} className="grid gap-1 text-xs font-bold">{field.name}<input onBlur={(event) => void setValue(field, event.currentTarget.value)} placeholder={field.fieldType} className="focus-ring min-h-10 rounded-lg border border-line px-3 text-sm font-normal" /></label>)}
+          {!fields.length ? <p className="py-4 text-xs text-ink/40">カスタム項目はまだありません。</p> : null}
+        </div>
+        {message ? <p className="mt-3 text-xs font-bold text-moss">{message}</p> : null}
+      </div>
+    </section>
+  );
+}

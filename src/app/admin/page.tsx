@@ -1,62 +1,37 @@
-import { LogoutButton } from "@/components/logout-button";
+import Link from "next/link";
 import { getAuthMode } from "@/lib/auth/config";
 import { requireAuthenticatedUser } from "@/lib/auth/server";
-import Link from "next/link";
+
+const workflows = [
+  { number: "1", title: "顧客へタグを付ける", note: "トーク画面で顧客を選び、右側から付与・解除", href: "/admin/inbox", action: "トークを開く", color: "bg-emerald-600" },
+  { number: "2", title: "友だち追加アンケート", note: "トーク上の回答ボタンごとに付与タグを設定", href: "/admin/surveys", action: "アンケートを作る", color: "bg-sky-600" },
+  { number: "3", title: "タグ起点の即時メッセージ", note: "タグが付いた直後、その顧客1名へ1通送信", href: "/admin/automations", action: "即時配信を設定", color: "bg-amber-500" },
+  { number: "4", title: "タグ別リッチメニュー", note: "条件に合う顧客1名のメニューだけを切替", href: "/admin/rich-menus", action: "メニューを設定", color: "bg-violet-600" }
+];
 
 export default async function AdminPage() {
   const user = await requireAuthenticatedUser();
   const mode = getAuthMode();
 
   return (
-    <main className="min-h-screen px-6 py-8 sm:px-10">
-      <div className="mx-auto max-w-6xl">
-        <header className="flex flex-col justify-between gap-4 border-b border-line pb-6 sm:flex-row sm:items-center">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-[0.2em] text-moss">LINE CRM</p>
-            <h1 className="mt-2 text-3xl font-black">管理画面</h1>
+    <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6 lg:p-8">
+      <div className="mx-auto max-w-7xl">
+        <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-[#174f43] via-[#1d725f] to-[#17977b] text-white shadow-lg">
+          <div className="grid gap-8 px-6 py-8 sm:px-9 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center lg:py-10">
+            <div><span className="rounded-full bg-white/15 px-3 py-1.5 text-[10px] font-black tracking-wide">MINIMUM PRODUCTION LAUNCH</span><h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">今日の顧客対応を、ここから。</h1><p className="mt-3 max-w-2xl text-sm leading-7 text-white/75">顧客との1対1トークを中心に、タグ・アンケート・即時メッセージ・個別リッチメニューを迷わず操作できます。</p><div className="mt-6 flex flex-wrap gap-3"><Link href="/admin/inbox" className="focus-ring rounded-xl bg-white px-5 py-3 text-sm font-black text-emerald-800 shadow-sm">1対1トークを開く</Link><Link href="/admin/surveys" className="focus-ring rounded-xl border border-white/30 bg-white/10 px-5 py-3 text-sm font-black text-white">アンケートを作る</Link></div></div>
+            <div className="rounded-2xl border border-white/15 bg-black/10 p-5 backdrop-blur"><p className="text-xs font-black text-white/60">現在の運用範囲</p><div className="mt-4 grid gap-3 text-sm">{["Sho本人1名だけ送信許可", "一斉・予約・自動返信は停止", "デフォルトリッチメニューは変更禁止"].map((item) => <div key={item} className="flex items-center gap-3"><span className="grid size-6 place-items-center rounded-full bg-emerald-300/20 text-xs text-emerald-200">✓</span><span className="font-bold">{item}</span></div>)}</div></div>
           </div>
-          <LogoutButton />
-        </header>
-
-        <section className="mt-8 grid gap-5 md:grid-cols-3">
-          <article className="rounded-xl border border-line bg-white p-5">
-            <p className="text-xs font-bold text-ink/50">認証ユーザー</p>
-            <p className="mt-3 break-all text-lg font-black">{user.email}</p>
-          </article>
-          <article className="rounded-xl border border-line bg-white p-5">
-            <p className="text-xs font-bold text-ink/50">認証モード</p>
-            <p className="mt-3 text-lg font-black">{mode === "mock" ? "mock mode" : "Supabase Auth"}</p>
-          </article>
-          <article className="rounded-xl border border-line bg-white p-5">
-            <p className="text-xs font-bold text-ink/50">Milestone 0</p>
-            <p className="mt-3 text-lg font-black text-moss">基盤準備完了</p>
-          </article>
         </section>
 
-        <section className="mt-6 rounded-xl border border-line bg-white p-6">
-          <h2 className="text-lg font-black">Minimum Internal Launch</h2>
-          <p className="mt-2 text-sm leading-7 text-ink/65">
-            顧客タグ、アンケート回答タグ、タグ起点の即時1通配信、顧客単位のタグ別リッチメニューを運用できます。
-          </p>
+        <div className="mt-8 flex items-end justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">Quick start</p><h2 className="mt-1 text-2xl font-black">4つの運用メニュー</h2><p className="mt-1 text-sm text-ink/45">番号順に設定すると、最短で使い始められます。</p></div><Link href="/admin/settings/line" className="hidden text-xs font-black text-moss hover:underline sm:block">LINE接続状態を確認 →</Link></div>
+        <section className="mt-5 grid gap-4 md:grid-cols-2">
+          {workflows.map((item) => <Link key={item.number} href={item.href} className="group rounded-2xl border border-line bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md sm:p-6"><div className="flex items-start gap-4"><span className={`grid size-11 shrink-0 place-items-center rounded-xl text-base font-black text-white ${item.color}`}>{item.number}</span><div className="min-w-0 flex-1"><h3 className="text-lg font-black">{item.title}</h3><p className="mt-1 text-sm leading-6 text-ink/50">{item.note}</p><p className="mt-4 text-xs font-black text-emerald-700 group-hover:underline">{item.action} →</p></div></div></Link>)}
         </section>
 
-        <section className="mt-6 grid gap-4 sm:grid-cols-2">
-          <Link href="/admin/inbox" className="rounded-xl border border-line bg-white p-5 hover:bg-paper">
-            <p className="text-xs font-bold text-moss">Inbox</p>
-            <p className="mt-2 text-lg font-black">会話・返信・対応管理を見る →</p>
-          </Link>
-          <Link href="/admin/settings/line" className="rounded-xl border border-line bg-white p-5 hover:bg-paper">
-            <p className="text-xs font-bold text-moss">LINE接続</p>
-            <p className="mt-2 text-lg font-black">Webhook・設定状態を見る →</p>
-          </Link>
-          <Link href="/admin/contacts" className="rounded-xl border border-line bg-white p-5 hover:bg-paper">
-            <p className="text-xs font-bold text-moss">Contacts</p>
-            <p className="mt-2 text-lg font-black">顧客一覧を見る →</p>
-          </Link>
-          <Link href="/admin/tags" className="rounded-xl border border-line bg-white p-5 hover:bg-paper"><p className="text-xs font-bold text-moss">① 顧客タグ</p><p className="mt-2 text-lg font-black">タグを作成する →</p></Link>
-          <Link href="/admin/surveys" className="rounded-xl border border-line bg-white p-5 hover:bg-paper"><p className="text-xs font-bold text-moss">② アンケート</p><p className="mt-2 text-lg font-black">回答タグを設定・送信する →</p></Link>
-          <Link href="/admin/automations" className="rounded-xl border border-line bg-white p-5 hover:bg-paper"><p className="text-xs font-bold text-moss">③ 即時配信</p><p className="mt-2 text-lg font-black">タグ起点の1通を設定する →</p></Link>
-          <Link href="/admin/rich-menus" className="rounded-xl border border-line bg-white p-5 hover:bg-paper"><p className="text-xs font-bold text-moss">④ リッチメニュー</p><p className="mt-2 text-lg font-black">タグ別メニューを設定する →</p></Link>
+        <section className="mt-8 grid gap-4 sm:grid-cols-3">
+          <article className="rounded-xl border border-line bg-white p-4"><p className="text-[10px] font-black text-ink/40">ログイン中</p><p className="mt-2 truncate text-sm font-black">{user.email}</p></article>
+          <article className="rounded-xl border border-line bg-white p-4"><p className="text-[10px] font-black text-ink/40">認証</p><p className="mt-2 text-sm font-black">{mode === "mock" ? "Mock Auth" : "Supabase Auth"}</p></article>
+          <Link href="/admin/settings/line" className="rounded-xl border border-line bg-white p-4 transition hover:border-emerald-300"><p className="text-[10px] font-black text-ink/40">LINE接続</p><p className="mt-2 text-sm font-black text-emerald-700">設定・疎通を確認 →</p></Link>
         </section>
       </div>
     </main>
