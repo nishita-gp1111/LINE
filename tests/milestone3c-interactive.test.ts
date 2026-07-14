@@ -39,5 +39,32 @@ describe("Milestone 3 interactive Mock flows", () => {
       tagId: tag.id
     });
   });
+  it("moves to the next LINE question and assigns each answer tag once", () => {
+    const firstTag = createTag({ name: `年代20代-${Date.now()}` });
+    const secondTag = createTag({ name: `興味採用-${Date.now()}` });
+    const contactId = `sequential-survey-contact-${Date.now()}`;
+    const survey = createSurvey({
+      name: `sequential-survey-${Date.now()}`,
+      questionTitle: "",
+      type: "single_choice",
+      options: [],
+      completionMessage: "回答ありがとうございました。",
+      questions: [
+        { title: "年代を教えてください", options: [{ key: "twenties", label: "20代", tagId: firstTag.id }] },
+        { title: "興味のある内容を教えてください", options: [{ key: "recruit", label: "採用情報", tagId: secondTag.id }] }
+      ]
+    });
+
+    const first = answerSurvey({ surveyId: survey.id, contactId, token: survey.questions[0]!.options[0]!.token, idempotencyKey: "question-1" });
+    const firstRedelivery = answerSurvey({ surveyId: survey.id, contactId, token: survey.questions[0]!.options[0]!.token, idempotencyKey: "question-1-redelivery" });
+    const second = answerSurvey({ surveyId: survey.id, contactId, token: survey.questions[1]!.options[0]!.token, idempotencyKey: "question-2" });
+    const assignments = foundationState().assignments.filter((assignment) => assignment.contactId === contactId && assignment.removedAt === null);
+
+    expect(first).toMatchObject({ duplicate: false, completed: false, nextQuestion: { title: "興味のある内容を教えてください" } });
+    expect(firstRedelivery).toMatchObject({ duplicate: true, completed: false });
+    expect(second).toMatchObject({ duplicate: false, completed: true, nextQuestion: null });
+    expect(survey.responses).toHaveLength(2);
+    expect(assignments.map((assignment) => assignment.tagId)).toEqual([firstTag.id, secondTag.id]);
+  });
   it("validates a rich menu before test link", () => { const menu = createRichMenu({ name: `menu-${Date.now()}`, definition: { width: 2500, height: 1686, chatBarText: "Menu", areas: [{ x: 0, y: 0, width: 2500, height: 1686, action: { type: "message", text: "hello" } }] } }); expect(validateRichMenuForMock(menu.id).valid).toBe(true); });
 });

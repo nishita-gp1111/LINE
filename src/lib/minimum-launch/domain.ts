@@ -14,6 +14,29 @@ export function followSurveyClientRequestId(webhookEventId: string, surveyId: st
   return `minimum-follow-survey:${webhookEventId}:${surveyId}:${contactId}`;
 }
 
+export function surveyQuestionClientRequestId(sessionId: string, questionId: string): string {
+  return `minimum-survey-question:${sessionId}:${questionId}`;
+}
+
+export function surveyCompletionClientRequestId(sessionId: string): string {
+  return `minimum-survey-complete:${sessionId}`;
+}
+
+export function surveyPostbackData(sessionId: string, token: string): string {
+  return `minimum-survey:${sessionId}:${token}`;
+}
+
+export function parseSurveyPostbackData(data: string): { sessionId: string | null; token: string } | null {
+  const prefix = "minimum-survey:";
+  if (!data.startsWith(prefix)) return null;
+  const payload = data.slice(prefix.length);
+  const separator = payload.indexOf(":");
+  if (separator < 0) return payload ? { sessionId: null, token: payload } : null;
+  const sessionId = payload.slice(0, separator);
+  const token = payload.slice(separator + 1);
+  return sessionId && token ? { sessionId, token } : null;
+}
+
 export function assignmentEffectMetadata(effectiveAdded: boolean): Record<string, boolean> {
   return { effectiveAdded };
 }

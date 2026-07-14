@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignmentEffectMetadata, followSurveyClientRequestId, selectRichMenuRule, shouldRunTagAddedEffects, surveyResponseKey } from "@/lib/minimum-launch/domain";
+import { assignmentEffectMetadata, followSurveyClientRequestId, parseSurveyPostbackData, selectRichMenuRule, shouldRunTagAddedEffects, surveyCompletionClientRequestId, surveyPostbackData, surveyQuestionClientRequestId, surveyResponseKey } from "@/lib/minimum-launch/domain";
 import { validateRichMenuImage } from "@/lib/minimum-launch/rich-menu-image";
 
 function png(width: number, height: number): Uint8Array {
@@ -23,6 +23,16 @@ describe("minimum internal launch domain", () => {
   it("creates one stable outbound id for a redelivered follow event", () => {
     expect(followSurveyClientRequestId("event-1", "survey-1", "contact-1")).toBe("minimum-follow-survey:event-1:survey-1:contact-1");
     expect(followSurveyClientRequestId("event-1", "survey-1", "contact-1")).toBe(followSurveyClientRequestId("event-1", "survey-1", "contact-1"));
+  });
+
+  it("binds survey postbacks and follow-up sends to one session", () => {
+    const data = surveyPostbackData("session-1", "opaque.token");
+    expect(data).toBe("minimum-survey:session-1:opaque.token");
+    expect(parseSurveyPostbackData(data)).toEqual({ sessionId: "session-1", token: "opaque.token" });
+    expect(parseSurveyPostbackData("minimum-survey:legacy.token")).toEqual({ sessionId: null, token: "legacy.token" });
+    expect(parseSurveyPostbackData("not-a-survey")).toBeNull();
+    expect(surveyQuestionClientRequestId("session-1", "question-2")).toBe("minimum-survey-question:session-1:question-2");
+    expect(surveyCompletionClientRequestId("session-1")).toBe("minimum-survey-complete:session-1");
   });
 
   it("records whether a tag assignment was the effective transition", () => {
