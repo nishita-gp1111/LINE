@@ -17,6 +17,8 @@ declare namespace NodeJS {
     LINE_TRACKING_ENABLED?: "true" | "false";
     LINE_TEST_USER_IDS?: string;
     LINE_TEST_USER_HASHES?: string;
+    LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED?: "true" | "false";
+    LINE_CONTROLLED_LAUNCH_ENROLLMENT_TOKEN_HASH?: string;
     ADMIN_EMAIL_ALLOWLIST?: string;
 
     NEXT_PUBLIC_SUPABASE_URL?: string;

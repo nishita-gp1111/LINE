@@ -67,7 +67,12 @@ export async function sendInboxTextMessage(input: SendMessageInput): Promise<{ m
   if (!detail || detail.contact.id !== resolved.contactId) throw new InboxSendError("送信先が見つかりません。");
   if (detail.contact.friendStatus === "blocked") throw new InboxSendError("このユーザーは現在ブロック状態です。");
   try {
-    assertTestRecipient(detail.contact.lineUserId);
+    if (input.store.authorizeControlledRecipient) {
+      const policy = await input.store.authorizeControlledRecipient(input.organizationId, detail.contact.lineUserId);
+      if (!policy.allowed) throw new Error(policy.reason || "送信先が許可されていません。");
+    } else {
+      assertTestRecipient(detail.contact.lineUserId);
+    }
   } catch (error) {
     throw new InboxSendError(error instanceof Error ? error.message : "送信先が許可されていません。");
   }

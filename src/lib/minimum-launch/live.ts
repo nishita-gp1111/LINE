@@ -3,7 +3,13 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getServerEnv } from "@/lib/env/server";
-import { assertLaunchAction, assertTestRecipient, isLaunchFlagEnabled } from "@/lib/launch/flags";
+import {
+  assertControlledRecipient,
+  getControlledRecipientRecord,
+  getEffectiveControlledRecipientHashes
+} from "@/lib/launch/controlled-recipient";
+import { assertLaunchAction, isLaunchFlagEnabled } from "@/lib/launch/flags";
+import { hashLineUserId } from "@/lib/launch/recipient-policy";
 import { activeTagAssignmentKey, tagDefinitionSchema } from "@/lib/milestone3/foundation";
 import { createOpaquePostbackToken, verifyOpaquePostbackToken } from "@/lib/milestone3/survey";
 import { SupabaseInboxStore } from "@/lib/inbox/store-supabase";
@@ -66,17 +72,17 @@ async function contactFor(client: SupabaseClient, organizationId: string, contac
 }
 
 async function allowlistedContact(client: SupabaseClient, organizationId: string): Promise<Row> {
-  const ids = getServerEnv().LINE_TEST_USER_IDS;
-  const hashes = getServerEnv().LINE_TEST_USER_HASHES;
-  if (ids.length + hashes.length !== 1) throw new Error("送信先の顧客を1名だけ設定してください。");
-  if (ids.length === 1) {
-    const { data, error } = await client.from("contacts").select("id, line_user_id, display_name, friend_status").eq("organization_id", organizationId).eq("line_user_id", ids[0]).maybeSingle();
+  const controlled = await getControlledRecipientRecord(client, organizationId);
+  if (controlled) {
+    const { data, error } = await client.from("contacts").select("id, line_user_id, display_name, friend_status").eq("organization_id", organizationId).eq("id", controlled.contactId).maybeSingle();
     if (error || !data) throw new Error("許可済み顧客が見つかりません。");
     return row(data);
   }
+  const hashes = await getEffectiveControlledRecipientHashes(client, organizationId);
+  if (hashes.length !== 1) throw new Error("送信先の顧客を1名だけ設定してください。");
   const { data, error } = await client.from("contacts").select("id, line_user_id, display_name, friend_status").eq("organization_id", organizationId).limit(500);
   if (error) throw new Error("許可済み顧客を取得できませんでした。");
-  const matches = (data || []).filter((value) => recipientIsAllowed(String(row(value).line_user_id)));
+  const matches = (data || []).filter((value) => hashes.includes(hashLineUserId(String(row(value).line_user_id))));
   if (matches.length !== 1) throw new Error("許可済み顧客が見つかりません。");
   return row(matches[0]);
 }
@@ -85,14 +91,18 @@ async function resolveContact(client: SupabaseClient, organizationId: string, co
   return contactId ? contactFor(client, organizationId, contactId) : allowlistedContact(client, organizationId);
 }
 
-function recipientIsAllowed(lineUserId: string): boolean {
-  try { assertTestRecipient(lineUserId); return true; } catch { return false; }
+async function recipientIsAllowed(client: SupabaseClient, organizationId: string, lineUserId: string): Promise<boolean> {
+  try { await assertControlledRecipient(client, organizationId, lineUserId); return true; } catch { return false; }
 }
 
 export async function listLiveContacts(client: SupabaseClient, organizationId: string): Promise<Row[]> {
-  const { data, error } = await client.from("contacts").select("id, display_name, friend_status, last_message_at").eq("organization_id", organizationId).neq("friend_status", "blocked").order("last_message_at", { ascending: false, nullsFirst: false }).limit(500);
+  const { data, error } = await client.from("contacts").select("id, line_user_id, display_name, friend_status, last_message_at").eq("organization_id", organizationId).neq("friend_status", "blocked").order("last_message_at", { ascending: false, nullsFirst: false }).limit(500);
   if (error) throw new Error("送信可能な顧客を取得できませんでした。");
-  return (data || []).map((value) => ({ id: row(value).id, displayName: row(value).display_name || "名称未取得", friendStatus: row(value).friend_status, lastMessageAt: row(value).last_message_at }));
+  const hashes = await getEffectiveControlledRecipientHashes(client, organizationId);
+  if (hashes.length !== 1) return [];
+  return (data || [])
+    .filter((value) => hashes.includes(hashLineUserId(String(row(value).line_user_id))))
+    .map((value) => ({ id: row(value).id, displayName: row(value).display_name || "名称未取得", friendStatus: row(value).friend_status, lastMessageAt: row(value).last_message_at }));
 }
 
 export async function listLiveTags(client: SupabaseClient, organizationId: string): Promise<{ tags: Row[]; assignments: Row[] }> {
@@ -115,6 +125,8 @@ export async function createLiveTag(input: { client: SupabaseClient; organizatio
 }
 
 export async function assignLiveTag(input: { client: SupabaseClient; organizationId: string; contactId: string; tagId: string; sourceType: "manual" | "survey"; sourceId?: string | null; actorProfileId: string }): Promise<{ assignment: Row; duplicate: boolean; effectiveAdded: boolean; automation: string; richMenu: RichMenuSync }> {
+  const contact = await contactFor(input.client, input.organizationId, input.contactId);
+  await assertControlledRecipient(input.client, input.organizationId, String(contact.line_user_id));
   const assignmentKey = activeTagAssignmentKey(input.contactId, input.tagId, input.sourceType, input.sourceId || null);
   const { data: rpcData, error: rpcError } = await input.client.rpc("minimum_assign_contact_tag", {
     target_organization_id: input.organizationId,
@@ -137,6 +149,10 @@ export async function assignLiveTag(input: { client: SupabaseClient; organizatio
 }
 
 export async function removeLiveTag(input: { client: SupabaseClient; organizationId: string; assignmentId: string; profileId: string }): Promise<Row> {
+  const { data: existing, error: existingError } = await input.client.from("contact_tag_assignments").select("contact_id").eq("organization_id", input.organizationId).eq("id", input.assignmentId).is("removed_at", null).maybeSingle();
+  if (existingError || !existing) throw new Error("有効なタグ付与が見つかりません。");
+  const contact = await contactFor(input.client, input.organizationId, String(existing.contact_id));
+  await assertControlledRecipient(input.client, input.organizationId, String(contact.line_user_id));
   const { data: rpcData, error: rpcError } = await input.client.rpc("minimum_remove_contact_tag", { target_organization_id: input.organizationId, target_assignment_id: input.assignmentId, target_actor_profile_id: input.profileId });
   if (rpcError) throw new Error("タグを解除できませんでした。");
   const result = firstRow(rpcData);
@@ -159,7 +175,7 @@ async function runTagAddedAutomation(input: { client: SupabaseClient; organizati
   if (typeof text !== "string" || !text.trim()) throw new Error("タグ起点メッセージ本文が未設定です。");
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
   if (String(contact.friend_status) === "blocked") return "blocked";
-  if (!recipientIsAllowed(String(contact.line_user_id))) return "recipient_not_allowed";
+  if (!await recipientIsAllowed(input.client, input.organizationId, String(contact.line_user_id))) return "recipient_not_allowed";
   assertLaunchAction("LINE_AUTOMATION_SEND_ENABLED");
   const idempotencyKey = `minimum-tag:${input.assignmentId}:${String(scenario.id)}`;
   const { data: existing, error: existingError } = await input.client.from("automation_enrollments").select("id, status, updated_at").eq("organization_id", input.organizationId).eq("idempotency_key", idempotencyKey).maybeSingle();
@@ -223,7 +239,7 @@ async function pushQuickReply(lineUserId: string, text: string, options: QuickRe
 async function sendQuickReplyMessage(input: { client: SupabaseClient; organizationId: string; contactId: string; profileId: string; text: string; options: QuickReplyOption[]; clientRequestId: string }): Promise<MessageRecord> {
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
   if (String(contact.friend_status) === "blocked") throw new Error("ブロック中の顧客には送信できません。");
-  assertTestRecipient(String(contact.line_user_id));
+  await assertControlledRecipient(input.client, input.organizationId, String(contact.line_user_id));
   const store = new SupabaseInboxStore(input.client, input.organizationId);
   const conversation = await store.ensureConversationForContact(input.organizationId, input.contactId, new Date().toISOString());
   const existing = await store.findOutboundByClientRequest(input.organizationId, input.clientRequestId);
@@ -295,7 +311,7 @@ export async function startLiveSurvey(input: { client: SupabaseClient; organizat
   assertLaunchAction(input.gate === "automation" ? "LINE_AUTOMATION_SEND_ENABLED" : "LINE_MANUAL_SEND_ENABLED");
   const contact = await resolveContact(input.client, input.organizationId, input.contactId);
   const contactId = String(contact.id);
-  assertTestRecipient(String(contact.line_user_id));
+  await assertControlledRecipient(input.client, input.organizationId, String(contact.line_user_id));
   const { data: survey, error: surveyError } = await input.client.from("surveys").select("*").eq("organization_id", input.organizationId).eq("id", input.surveyId).eq("status", "active").single();
   if (surveyError || !survey) throw new Error("有効なアンケートが見つかりません。");
   const { data: question, error: questionError } = await input.client.from("survey_questions").select("*").eq("organization_id", input.organizationId).eq("survey_id", input.surveyId).order("sort_order").limit(1).single();
@@ -321,7 +337,7 @@ export async function sendFollowSurveyIfConfigured(input: { client: SupabaseClie
   if (error) throw new Error("友だち追加時アンケートを取得できませんでした。");
   if (!survey) return "not_configured";
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
-  if (!recipientIsAllowed(String(contact.line_user_id))) return "recipient_not_allowed";
+  if (!await recipientIsAllowed(input.client, input.organizationId, String(contact.line_user_id))) return "recipient_not_allowed";
   const profileId = await systemProfileId(input.client, input.organizationId);
   const surveyId = String(row(survey).id);
   await startLiveSurvey({
@@ -359,6 +375,10 @@ async function applySurveyTagAction(input: { client: SupabaseClient; organizatio
 export async function handleLiveSurveyPostback(input: { client: SupabaseClient; organizationId: string; contactId: string; data: string; webhookEventId: string }): Promise<{ handled: boolean; duplicate: boolean; tagId?: string }> {
   const prefix = "minimum-survey:";
   if (!input.data.startsWith(prefix)) return { handled: false, duplicate: false };
+  const contact = await contactFor(input.client, input.organizationId, input.contactId);
+  if (!await recipientIsAllowed(input.client, input.organizationId, String(contact.line_user_id))) {
+    return { handled: false, duplicate: false };
+  }
   const token = input.data.slice(prefix.length);
   const secret = getServerEnv().SURVEY_POSTBACK_TOKEN_SECRET;
   if (!secret || !verifyOpaquePostbackToken(token, secret)) throw new Error("アンケート回答トークンが無効または期限切れです。");
@@ -536,7 +556,7 @@ export async function linkLiveRichMenu(input: { client: SupabaseClient; organiza
   assertLaunchAction("LINE_RICH_MENU_MUTATION_ENABLED");
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
   if (String(contact.friend_status) === "blocked") throw new Error("ブロック中の顧客にはリッチメニューを設定できません。");
-  assertTestRecipient(String(contact.line_user_id));
+  await assertControlledRecipient(input.client, input.organizationId, String(contact.line_user_id));
   const { data: menu, error } = await input.client.from("rich_menus").select("id, line_rich_menu_id").eq("organization_id", input.organizationId).eq("id", input.richMenuId).eq("status", "active").single();
   if (error || !menu || !row(menu).line_rich_menu_id) throw new Error("リッチメニューが見つかりません。");
   const { data: existing } = await input.client.from("rich_menu_assignments").select("rich_menu_id, source_id, status").eq("organization_id", input.organizationId).eq("contact_id", input.contactId).maybeSingle();
@@ -558,7 +578,7 @@ export async function linkLiveRichMenu(input: { client: SupabaseClient; organiza
 export async function restoreLiveRichMenu(input: { client: SupabaseClient; organizationId: string; contactId: string }): Promise<string | null> {
   assertLaunchAction("LINE_RICH_MENU_MUTATION_ENABLED");
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
-  assertTestRecipient(String(contact.line_user_id));
+  await assertControlledRecipient(input.client, input.organizationId, String(contact.line_user_id));
   const { data: assignment, error } = await input.client.from("rich_menu_assignments").select("source_id, status").eq("organization_id", input.organizationId).eq("contact_id", input.contactId).maybeSingle();
   if (error || !assignment || row(assignment).status === "removed") return null;
   const previous = row(assignment).source_id ? String(row(assignment).source_id) : null;
@@ -572,7 +592,7 @@ export async function reconcileContactRichMenu(input: { client: SupabaseClient; 
   if (!isLaunchFlagEnabled("LINE_RICH_MENU_MUTATION_ENABLED")) return "disabled";
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
   if (String(contact.friend_status) === "blocked") return "blocked";
-  if (!recipientIsAllowed(String(contact.line_user_id))) return "recipient_not_allowed";
+  if (!await recipientIsAllowed(input.client, input.organizationId, String(contact.line_user_id))) return "recipient_not_allowed";
   const assignments = await input.client.from("contact_tag_assignments").select("tag_id").eq("organization_id", input.organizationId).eq("contact_id", input.contactId).is("removed_at", null);
   if (assignments.error) throw new Error("顧客タグを取得できませんでした。");
   const activeTagIds = [...new Set((assignments.data || []).map((value) => String(row(value).tag_id)))];

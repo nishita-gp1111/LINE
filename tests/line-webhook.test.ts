@@ -6,6 +6,7 @@ import { getLineFixture } from "../src/lib/line/fixtures";
 import { LineProfileClient } from "../src/lib/line/client";
 import { processWebhookEvent, processWebhookEvents } from "../src/lib/webhook/processor";
 import { MockWebhookStore } from "../src/lib/webhook/store";
+import { CONTROLLED_ENROLLMENT_REDACTED_TEXT } from "../src/lib/launch/controlled-recipient";
 import type { LineEvent } from "../src/lib/line/types";
 
 const secret = "test-channel-secret";
@@ -76,6 +77,28 @@ describe("Mock webhook store integration", () => {
     await processWebhookEvent(newerFollow, store, context);
     await processWebhookEvent(olderUnfollow, store, context);
     expect((await store.listContacts({ page: 1, pageSize: 50 })).items[0]?.friendStatus).toBe("following");
+  });
+
+  it("enrolls from the signed text event without retaining the one-time phrase", async () => {
+    const store = new MockWebhookStore();
+    const enrollmentInputs: Array<{ lineUserId: string; message?: string | null }> = [];
+    const source = eventFromFixture("text");
+    const result = await processWebhookEvent(source, store, {
+      organizationId,
+      profileClient,
+      controlledRecipientEnrollment: async (input) => {
+        enrollmentInputs.push({ lineUserId: input.lineUserId, message: input.message });
+        return { matched: true, status: "enrolled" };
+      }
+    });
+
+    expect(result).toBe("processed");
+    expect(enrollmentInputs).toEqual([{ lineUserId: source.source?.userId, message: "fixture message" }]);
+    const contact = (await store.listContacts({ page: 1, pageSize: 50 })).items[0]!;
+    const [message] = await store.listMessages(organizationId, contact.id);
+    expect(message?.textContent).toBe(CONTROLLED_ENROLLMENT_REDACTED_TEXT);
+    expect(JSON.stringify(message?.payloadJson)).not.toContain("fixture message");
+    expect(message?.payloadJson).toMatchObject({ hasText: false, controlledLaunchEnrollment: true });
   });
 });
 

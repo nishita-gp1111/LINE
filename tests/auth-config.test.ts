@@ -68,6 +68,8 @@ describe("environment schema", () => {
     expect(env.MOCK_LINE_API).toBe(true);
     expect(env.LINE_MANUAL_SEND_ENABLED).toBe(false);
     expect(env.LINE_TEST_USER_HASHES).toEqual([]);
+    expect(env.LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED).toBe(false);
+    expect(env.LINE_CONTROLLED_LAUNCH_ENROLLMENT_TOKEN_HASH).toBeUndefined();
     expect(env.ADMIN_EMAIL_ALLOWLIST).toEqual([]);
     expect(env.SURVEY_MAX_QUESTIONS).toBe(50);
   });
@@ -78,12 +80,16 @@ describe("environment schema", () => {
       APP_ENV: "test",
       APP_TIMEZONE: "Asia/Tokyo",
       MOCK_LINE_API: "false",
+      LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED: "true",
+      LINE_CONTROLLED_LAUNCH_ENROLLMENT_TOKEN_HASH: "a".repeat(64),
       ADMIN_EMAIL_ALLOWLIST: "Owner@Example.com, admin@example.com"
     });
 
     expect(env.NEXT_PUBLIC_APP_URL).toBe("http://127.0.0.1:3000");
     expect(env.APP_ENV).toBe("test");
     expect(env.MOCK_LINE_API).toBe(false);
+    expect(env.LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED).toBe(true);
+    expect(env.LINE_CONTROLLED_LAUNCH_ENROLLMENT_TOKEN_HASH).toBe("a".repeat(64));
     expect(env.ADMIN_EMAIL_ALLOWLIST).toEqual([
       "owner@example.com",
       "admin@example.com"

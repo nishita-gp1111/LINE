@@ -17,8 +17,18 @@ export function hashLineUserId(lineUserId: string): string {
   return createHash("sha256").update(lineUserId, "utf8").digest("hex");
 }
 
+export function configuredRecipientHashes(
+  allowedLineUserIds: string[],
+  allowedLineUserHashes: string[]
+): string[] {
+  return [...new Set([
+    ...allowedLineUserIds.map(hashLineUserId),
+    ...allowedLineUserHashes.map((value) => value.toLowerCase())
+  ])];
+}
+
 export function configuredRecipientCount(allowedLineUserIds: string[], allowedLineUserHashes: string[]): number {
-  return allowedLineUserIds.length + allowedLineUserHashes.length;
+  return configuredRecipientHashes(allowedLineUserIds, allowedLineUserHashes).length;
 }
 
 /**
@@ -28,7 +38,8 @@ export function configuredRecipientCount(allowedLineUserIds: string[], allowedLi
 export function evaluateRecipientPolicy(input: RecipientPolicyInput): RecipientPolicyState {
   if (input.mockLineApi) return { allowed: true, reason: null };
 
-  const configuredCount = configuredRecipientCount(input.allowedLineUserIds, input.allowedLineUserHashes);
+  const allowedHashes = configuredRecipientHashes(input.allowedLineUserIds, input.allowedLineUserHashes);
+  const configuredCount = allowedHashes.length;
   if (configuredCount === 0) {
     return {
       allowed: false,
@@ -36,16 +47,14 @@ export function evaluateRecipientPolicy(input: RecipientPolicyInput): RecipientP
     };
   }
 
-  if (input.appEnvironment === "production" && configuredCount !== 1) {
+  if (configuredCount !== 1) {
     return {
       allowed: false,
-      reason: "Productionでは送信許可先をSho本人1名だけに制限してください。"
+      reason: "Controlled Launchでは送信許可先をSho本人1名だけに制限してください。"
     };
   }
 
-  const idAllowed = input.allowedLineUserIds.includes(input.lineUserId);
-  const hashAllowed = input.allowedLineUserHashes.includes(hashLineUserId(input.lineUserId));
-  if (!idAllowed && !hashAllowed) {
+  if (!allowedHashes.includes(hashLineUserId(input.lineUserId))) {
     return {
       allowed: false,
       reason: "この送信先はProduction allowlistで許可されていません。"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateRecipientPolicy } from "@/lib/launch/recipient-policy";
+import { configuredRecipientCount, evaluateRecipientPolicy, hashLineUserId } from "@/lib/launch/recipient-policy";
 
 describe("live recipient policy", () => {
   it("allows mock traffic without an allowlist", () => {
@@ -50,7 +50,6 @@ describe("live recipient policy", () => {
   });
 
   it("accepts a SHA-256 allowlist entry without storing the raw LINE user ID", async () => {
-    const { hashLineUserId } = await import("@/lib/launch/recipient-policy");
     expect(evaluateRecipientPolicy({
       appEnvironment: "production",
       mockLineApi: false,
@@ -58,5 +57,19 @@ describe("live recipient policy", () => {
       allowedLineUserHashes: [hashLineUserId("Usho")],
       lineUserId: "Usho"
     }).allowed).toBe(true);
+  });
+
+  it("counts duplicate raw and hashed entries as one recipient", () => {
+    expect(configuredRecipientCount(["Usho"], [hashLineUserId("Usho")])).toBe(1);
+  });
+
+  it("rejects multiple recipients in Preview live mode too", () => {
+    expect(evaluateRecipientPolicy({
+      appEnvironment: "development",
+      mockLineApi: false,
+      allowedLineUserIds: ["Usho", "Uother"],
+      allowedLineUserHashes: [],
+      lineUserId: "Usho"
+    }).allowed).toBe(false);
   });
 });

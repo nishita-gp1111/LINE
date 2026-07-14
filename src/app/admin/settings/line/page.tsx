@@ -2,7 +2,9 @@ import Link from "next/link";
 import ConnectionActions from "@/app/admin/settings/line/connection-actions";
 import { getServerEnv } from "@/lib/env/server";
 import { getWebhookMetrics } from "@/lib/contacts/queries";
+import { getControlledRecipientRecord } from "@/lib/launch/controlled-recipient";
 import { getWebhookUrl } from "@/lib/line/webhook-url";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 function formatDate(value: string | null, timezone: string): string {
   if (!value) return "未受信";
@@ -17,6 +19,16 @@ export default async function LineSettingsPage() {
   const env = getServerEnv();
   const metrics = await getWebhookMetrics();
   const webhookUrl = getWebhookUrl(env.NEXT_PUBLIC_APP_URL);
+  const admin = createSupabaseAdminClient();
+  let controlledRecipientStatus = env.MOCK_LINE_API ? "Mock mode" : "未登録（送信停止）";
+  if (!env.MOCK_LINE_API && admin && env.LINE_ORGANIZATION_ID) {
+    try {
+      const recipient = await getControlledRecipientRecord(admin, env.LINE_ORGANIZATION_ID);
+      controlledRecipientStatus = recipient ? "Sho本人1名を登録済み" : "本人登録メッセージ待ち";
+    } catch {
+      controlledRecipientStatus = "DB未確認（送信停止）";
+    }
+  }
   const liveReady = Boolean(
     env.LINE_CHANNEL_ID && env.LINE_CHANNEL_SECRET && env.LINE_CHANNEL_ACCESS_TOKEN
   );
@@ -75,6 +87,11 @@ export default async function LineSettingsPage() {
                   ? "設定済み（接続テストによるメッセージ送信は行っていません）"
                   : "LINE環境変数が不足しています。"}
             </p>
+          </div>
+          <div>
+            <p className="text-xs font-bold text-ink/50">Controlled Launch送信先</p>
+            <p className="mt-2 font-bold">{controlledRecipientStatus}</p>
+            <p className="mt-1 text-sm text-ink/60">LINE User IDやそのハッシュは画面へ表示しません。</p>
           </div>
         </section>
 

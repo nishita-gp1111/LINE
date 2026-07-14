@@ -57,7 +57,7 @@ export function launchFlagStatus(): Record<LaunchFlag, boolean> {
   };
 }
 
-export function launchBlockers(): string[] {
+export function launchBlockers(options: { allowedRecipientCount?: number } = {}): string[] {
   const env = getServerEnv();
   const blockers: string[] = [];
   if (!env.MOCK_LINE_API && !env.LINE_ORGANIZATION_ID) blockers.push("LINE_ORGANIZATION_IDが未設定です。");
@@ -83,7 +83,9 @@ export function launchBlockers(): string[] {
     if (!env.SURVEY_POSTBACK_TOKEN_SECRET || env.SURVEY_POSTBACK_TOKEN_SECRET.length < 32) {
       blockers.push("SURVEY_POSTBACK_TOKEN_SECRETを32文字以上で設定してください。");
     }
-    if (configuredRecipientCount(env.LINE_TEST_USER_IDS, env.LINE_TEST_USER_HASHES) !== 1) {
+    const allowedRecipientCount = options.allowedRecipientCount
+      ?? configuredRecipientCount(env.LINE_TEST_USER_IDS, env.LINE_TEST_USER_HASHES);
+    if (allowedRecipientCount !== 1) {
       blockers.push("Production送信allowlistをSho本人1名だけに設定してください。");
     }
     if (!env.LINE_MANUAL_SEND_ENABLED) blockers.push("LINE_MANUAL_SEND_ENABLEDをtrueにしてください。");
