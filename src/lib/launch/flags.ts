@@ -31,8 +31,8 @@ export function assertLaunchAction(flag: LaunchFlag): void {
 export function assertTestRecipient(lineUserId: string): void {
   const env = getServerEnv();
   if (env.MOCK_LINE_API) return;
-  if (env.LINE_TEST_USER_IDS.length === 0 || !env.LINE_TEST_USER_IDS.includes(lineUserId)) {
-    throw new Error("controlled launch中は許可されたテストユーザーにだけ送信できます。");
+  if (env.LINE_TEST_USER_IDS.length > 0 && !env.LINE_TEST_USER_IDS.includes(lineUserId)) {
+    throw new Error("この送信先はLINE_TEST_USER_IDSで許可されていません。");
   }
 }
 

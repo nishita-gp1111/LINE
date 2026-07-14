@@ -34,9 +34,9 @@ export default async function AdminPage() {
         </section>
 
         <section className="mt-6 rounded-xl border border-line bg-white p-6">
-          <h2 className="text-lg font-black">Milestone 3 Launch foundation</h2>
+          <h2 className="text-lg font-black">Minimum Internal Launch</h2>
           <p className="mt-2 text-sm leading-7 text-ink/65">
-            タグ、セグメント、配信、automation、survey、rich menu、計測の安全基盤を確認できます。本番の送信・自動処理・外部変更はfeature flagで停止しています。
+            顧客タグ、アンケート回答タグ、タグ起点の即時1通配信、顧客単位のタグ別リッチメニューを運用できます。
           </p>
         </section>
 
@@ -53,10 +53,10 @@ export default async function AdminPage() {
             <p className="text-xs font-bold text-moss">Contacts</p>
             <p className="mt-2 text-lg font-black">顧客一覧を見る →</p>
           </Link>
-          <Link href="/admin/tags" className="rounded-xl border border-line bg-white p-5 hover:bg-paper"><p className="text-xs font-bold text-moss">顧客データ</p><p className="mt-2 text-lg font-black">タグ・項目・セグメント →</p></Link>
-          <Link href="/admin/campaigns" className="rounded-xl border border-line bg-white p-5 hover:bg-paper"><p className="text-xs font-bold text-moss">配信</p><p className="mt-2 text-lg font-black">メディア・テンプレート・配信 →</p></Link>
-          <Link href="/admin/surveys" className="rounded-xl border border-line bg-white p-5 hover:bg-paper"><p className="text-xs font-bold text-moss">自動化</p><p className="mt-2 text-lg font-black">Automation・アンケート →</p></Link>
-          <Link href="/admin/launch" className="rounded-xl border border-amber-200 bg-amber-50 p-5 hover:bg-amber-100"><p className="text-xs font-bold text-amber-800">Launch</p><p className="mt-2 text-lg font-black">受入ゲートを確認 →</p></Link>
+          <Link href="/admin/tags" className="rounded-xl border border-line bg-white p-5 hover:bg-paper"><p className="text-xs font-bold text-moss">① 顧客タグ</p><p className="mt-2 text-lg font-black">タグを作成する →</p></Link>
+          <Link href="/admin/surveys" className="rounded-xl border border-line bg-white p-5 hover:bg-paper"><p className="text-xs font-bold text-moss">② アンケート</p><p className="mt-2 text-lg font-black">回答タグを設定・送信する →</p></Link>
+          <Link href="/admin/automations" className="rounded-xl border border-line bg-white p-5 hover:bg-paper"><p className="text-xs font-bold text-moss">③ 即時配信</p><p className="mt-2 text-lg font-black">タグ起点の1通を設定する →</p></Link>
+          <Link href="/admin/rich-menus" className="rounded-xl border border-line bg-white p-5 hover:bg-paper"><p className="text-xs font-bold text-moss">④ リッチメニュー</p><p className="mt-2 text-lg font-black">タグ別メニューを設定する →</p></Link>
         </section>
       </div>
     </main>

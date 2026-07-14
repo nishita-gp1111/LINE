@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LineEvent } from "@/lib/line/types";
 import { minimalMessagePayload, redactWebhookEventPayload } from "@/lib/line/redaction";
 import { LineProfileClient } from "@/lib/line/client";
-import { handleLiveSurveyPostback } from "@/lib/minimum-launch/live";
+import { handleLiveSurveyPostback, sendFollowSurveyIfConfigured } from "@/lib/minimum-launch/live";
 import type { ApplyContactInput, WebhookStore } from "@/lib/webhook/store";
 
 type ProcessContext = {
@@ -70,6 +70,9 @@ export async function processWebhookEvent(
     if (event.type === "follow") {
       const contact = await applyContact(store, context, event, "follow");
       if (contact && store.ensureConversationForContact) await store.ensureConversationForContact(context.organizationId, contact.id, eventAt(event));
+      if (contact && context.minimumLaunchClient) {
+        await sendFollowSurveyIfConfigured({ client: context.minimumLaunchClient, organizationId: context.organizationId, contactId: contact.id, webhookEventId: event.webhookEventId });
+      }
       await store.completeEvent(claim.eventId, "processed");
       return "processed";
     }

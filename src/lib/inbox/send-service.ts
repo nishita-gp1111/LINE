@@ -5,7 +5,7 @@ import { getServerEnv } from "@/lib/env/server";
 import { createLinePushClient, lineTextMessageSchema, LineSendConfigurationError, type LinePushClient, type LinePushResult } from "@/lib/line/send";
 import type { InboxRole, InboxStore } from "@/lib/inbox/types";
 import type { MessageRecord } from "@/lib/webhook/store";
-import { assertTestRecipient } from "@/lib/launch/flags";
+import { assertTestRecipient, isLaunchFlagEnabled } from "@/lib/launch/flags";
 
 export class InboxSendError extends Error {
   constructor(message: string) {
@@ -55,7 +55,8 @@ async function resolveMessage(input: SendMessageInput): Promise<{ message: Messa
 export async function sendInboxTextMessage(input: SendMessageInput): Promise<{ message: MessageRecord; reused: boolean }> {
   if (input.role === "viewer") throw new InboxSendError("viewerはメッセージを送信できません。");
   const env = getServerEnv();
-  if (!env.MOCK_LINE_API && !(input.gate === "automation" ? env.LINE_AUTOMATION_SEND_ENABLED : env.LINE_MANUAL_SEND_ENABLED)) throw new InboxSendError(`${input.gate === "automation" ? "自動送信" : "手動送信"}は無効です。`);
+  const sendFlag = input.gate === "automation" ? "LINE_AUTOMATION_SEND_ENABLED" : "LINE_MANUAL_SEND_ENABLED";
+  if (!env.MOCK_LINE_API && !isLaunchFlagEnabled(sendFlag)) throw new InboxSendError(`${input.gate === "automation" ? "自動送信" : "手動送信"}は無効です。`);
   if (!input.messageId && input.text !== undefined) {
     const parsed = lineTextMessageSchema.safeParse(input.text);
     if (!parsed.success) throw new InboxSendError(parsed.error.issues[0]?.message || "本文が不正です。");

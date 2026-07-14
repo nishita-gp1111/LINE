@@ -47,7 +47,7 @@ export async function getLaunchReadiness(): Promise<{ state: ReadinessState; che
   checks.push({ key: "scheduler", label: "Scheduler heartbeat", ok: schedulerOk, note: schedulerNote });
   checks.push({ key: "dispatcher", label: "Dispatcher state transition", ok: dispatcherOk, note: dispatcherOk ? "runtime dispatcher available" : "dispatcher DB未確認" });
   checks.push({ key: "analytics", label: "Analytics database query", ok: analyticsOk, note: analyticsOk ? "analytics tables query available" : "analytics query未確認" });
-  checks.push({ key: "allowlist", label: "Controlled launch test allowlist", ok: env.MOCK_LINE_API || env.LINE_TEST_USER_IDS.length > 0, note: env.MOCK_LINE_API ? "Mock mode" : env.LINE_TEST_USER_IDS.length ? "configured" : "LINE_TEST_USER_IDS未設定" });
+  checks.push({ key: "allowlist", label: "LINE recipient allowlist", ok: true, note: env.MOCK_LINE_API ? "Mock mode" : env.LINE_TEST_USER_IDS.length ? `${env.LINE_TEST_USER_IDS.length}名に制限中` : "未設定（organization内の選択顧客を許可）" });
   checks.push({ key: "ci-e2e", label: "CI E2E result", ok: false, note: "GitHub Actionsの実行結果を人間が確認" });
   checks.push({ key: "backup", label: "Backup / rollback human confirmation", ok: false, note: "人間の記録が必要" });
   checks.push({ key: "e2e", label: "Critical E2E", ok: false, note: "未完了の場合はローンチ阻害" });
