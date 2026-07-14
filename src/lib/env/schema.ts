@@ -72,8 +72,6 @@ export const envSchema = z.object({
   LINE_LOGIN_CHANNEL_ID: optionalText,
   LINE_LOGIN_CHANNEL_SECRET: optionalText,
 
-  LAUNCH_ACCEPTANCE_ENABLED: booleanEnv(false),
-  LAUNCH_ACCEPTANCE_TOKEN: optionalText,
 
   CRON_SECRET: optionalText,
   SCHEDULER_PROVIDER: z.enum(["supabase_cron", "vercel_cron", "manual"]).default("supabase_cron"),
