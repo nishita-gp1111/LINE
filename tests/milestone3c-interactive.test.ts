@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createRule, createScenario, createSurvey, enrollAndRunScenario, answerSurvey, createRichMenu, validateRichMenuForMock } from "@/lib/milestone3/interactive-store";
+import { createRule, createScenario, createSurvey, enrollAndRunScenario, answerSurvey, createRichMenu, listSurveys, validateRichMenuForMock } from "@/lib/milestone3/interactive-store";
 import { createTag, foundationState } from "@/lib/milestone3/foundation-store";
 
 beforeEach(() => { process.env.MOCK_LINE_API = "true"; process.env.APP_ENV = "test"; process.env.LINE_CHANNEL_SECRET = "interactive-test-secret"; });
@@ -34,6 +34,10 @@ describe("Milestone 3 interactive Mock flows", () => {
     expect(redelivery.duplicate).toBe(true);
     expect(assignments).toHaveLength(1);
     expect(assignments[0]).toMatchObject({ sourceType: "survey", sourceId: survey.id });
+    expect(listSurveys().find((item) => item.id === survey.id)?.question.options[0]).toMatchObject({
+      label: "Web広告",
+      tagId: tag.id
+    });
   });
   it("validates a rich menu before test link", () => { const menu = createRichMenu({ name: `menu-${Date.now()}`, definition: { width: 2500, height: 1686, chatBarText: "Menu", areas: [{ x: 0, y: 0, width: 2500, height: 1686, action: { type: "message", text: "hello" } }] } }); expect(validateRichMenuForMock(menu.id).valid).toBe(true); });
 });
