@@ -64,6 +64,11 @@ export function launchBlockers(options: { allowedRecipientCount?: number } = {})
   if (!env.MOCK_LINE_API && !env.LINE_CHANNEL_ID) blockers.push("LINE_CHANNEL_IDが未設定です。");
   if (!env.MOCK_LINE_API && !env.LINE_CHANNEL_SECRET) blockers.push("LINE_CHANNEL_SECRETが未設定です。");
   if (!env.MOCK_LINE_API && !env.LINE_CHANNEL_ACCESS_TOKEN) blockers.push("LINE_CHANNEL_ACCESS_TOKENが未設定です。");
+  const allowedRecipientCount = options.allowedRecipientCount
+    ?? configuredRecipientCount(env.LINE_TEST_USER_IDS, env.LINE_TEST_USER_HASHES);
+  if (!env.MOCK_LINE_API && allowedRecipientCount !== 1) {
+    blockers.push("Controlled Launch送信allowlistをSho本人1名だけに設定してください。");
+  }
 
   if (env.APP_ENV === "production") {
     if (env.MOCK_LINE_API) blockers.push("ProductionではMOCK_LINE_APIをfalseにしてください。");
@@ -82,11 +87,6 @@ export function launchBlockers(options: { allowedRecipientCount?: number } = {})
     if (!env.LINE_EXPECTED_DISPLAY_NAME) blockers.push("LINE_EXPECTED_DISPLAY_NAMEが未設定です。");
     if (!env.SURVEY_POSTBACK_TOKEN_SECRET || env.SURVEY_POSTBACK_TOKEN_SECRET.length < 32) {
       blockers.push("SURVEY_POSTBACK_TOKEN_SECRETを32文字以上で設定してください。");
-    }
-    const allowedRecipientCount = options.allowedRecipientCount
-      ?? configuredRecipientCount(env.LINE_TEST_USER_IDS, env.LINE_TEST_USER_HASHES);
-    if (allowedRecipientCount !== 1) {
-      blockers.push("Production送信allowlistをSho本人1名だけに設定してください。");
     }
     if (!env.LINE_MANUAL_SEND_ENABLED) blockers.push("LINE_MANUAL_SEND_ENABLEDをtrueにしてください。");
     if (!env.LINE_AUTOMATION_SEND_ENABLED) blockers.push("LINE_AUTOMATION_SEND_ENABLEDをtrueにしてください。");
