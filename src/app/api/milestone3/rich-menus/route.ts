@@ -4,11 +4,32 @@ import { canAdminister, getInboxAuthContext } from "@/lib/inbox/auth";
 import { getServerEnv } from "@/lib/env/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createLiveRichMenu } from "@/lib/minimum-launch/live";
+import { getRichMenuLayout, type RichMenuActionInput } from "@/lib/minimum-launch/rich-menu-layouts";
 
 export const runtime = "nodejs";
 
 function reply(data: unknown, status = 200) {
   return NextResponse.json(data, { status, headers: { "cache-control": "no-store" } });
+}
+
+function parseActions(form: FormData): RichMenuActionInput[] {
+  const serialized = form.get("actions");
+  if (typeof serialized === "string" && serialized.trim()) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(serialized); } catch { throw new Error("ボタンの動作設定を読み取れませんでした。"); }
+    if (!Array.isArray(parsed)) throw new Error("ボタンの動作設定を確認してください。");
+    return parsed.map((value) => {
+      if (!value || typeof value !== "object") throw new Error("ボタンの動作設定を確認してください。");
+      const action = value as { type?: unknown; value?: unknown };
+      if (action.type !== "uri" && action.type !== "message") throw new Error("ボタンの動作を確認してください。");
+      if (typeof action.value !== "string") throw new Error("ボタンの入力内容を確認してください。");
+      return { type: action.type, value: action.value };
+    });
+  }
+
+  const actionType = String(form.get("actionType") || "");
+  if (actionType !== "uri" && actionType !== "message") throw new Error("リッチメニューのアクションを確認してください。");
+  return [{ type: actionType, value: String(form.get("actionValue") || "") }];
 }
 
 export async function POST(request: Request) {
@@ -21,9 +42,11 @@ export async function POST(request: Request) {
   try {
     const form = await request.formData();
     const image = form.get("image");
-    const actionType = String(form.get("actionType") || "");
+    const layoutId = String(form.get("layoutId") || "single");
+    const layout = getRichMenuLayout(layoutId);
+    const actions = parseActions(form);
     if (!(image instanceof File)) return reply({ error: "リッチメニュー画像を選択してください。" }, 400);
-    if (actionType !== "uri" && actionType !== "message") return reply({ error: "リッチメニューのアクションを確認してください。" }, 400);
+    if (actions.length !== layout.areas.length) return reply({ error: "レイアウト内のすべてのボタンを設定してください。" }, 400);
     const menu = await createLiveRichMenu({
       client,
       organizationId: auth.organizationId,
@@ -31,7 +54,8 @@ export async function POST(request: Request) {
       name: String(form.get("name") || ""),
       tagId: String(form.get("tagId") || ""),
       chatBarText: String(form.get("chatBarText") || "メニュー"),
-      action: { type: actionType, value: String(form.get("actionValue") || "") },
+      layoutId,
+      actions,
       imageBytes: new Uint8Array(await image.arrayBuffer()),
       imageContentType: image.type,
       applyExisting: String(form.get("applyExisting") || "true") !== "false"

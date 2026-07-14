@@ -17,10 +17,10 @@ import { sendInboxTextMessage } from "@/lib/inbox/send-service";
 import type { MessageRecord } from "@/lib/webhook/store";
 import { followSurveyClientRequestId, selectRichMenuRule, surveyResponseKey, type RichMenuRuleCandidate } from "@/lib/minimum-launch/domain";
 import { validateRichMenuImage } from "@/lib/minimum-launch/rich-menu-image";
+import { scaleRichMenuLayout, type RichMenuActionInput } from "@/lib/minimum-launch/rich-menu-layouts";
 import { assertPerUserRichMenuPath } from "@/lib/milestone3/rich-menu";
 
 type Row = Record<string, unknown>;
-type LineAction = { type: "uri" | "message"; value: string };
 type RichMenuSync = "linked" | "restored" | "unchanged" | "not_configured" | "disabled" | "blocked" | "recipient_not_allowed";
 
 function row(value: unknown): Row {
@@ -455,9 +455,10 @@ export async function activateLiveScenario(client: SupabaseClient, organizationI
   return row(data);
 }
 
-function richMenuAction(action: LineAction): Row {
+function richMenuAction(action: RichMenuActionInput): Row {
   const value = action.value.trim();
   if (action.type === "uri") {
+    if (!value || value.length > 1_000) throw new Error("リッチメニューURLは1〜1000文字にしてください。");
     let url: URL;
     try { url = new URL(value); } catch { throw new Error("リッチメニューのURLが不正です。"); }
     if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("リッチメニューURLはhttpまたはhttpsにしてください。");
@@ -467,7 +468,7 @@ function richMenuAction(action: LineAction): Row {
   return { type: "message", label: "送信", text: value };
 }
 
-export async function createLiveRichMenu(input: { client: SupabaseClient; organizationId: string; profileId: string; name: string; tagId: string; chatBarText: string; action: LineAction; imageBytes: Uint8Array; imageContentType: string; applyExisting?: boolean }): Promise<Row> {
+export async function createLiveRichMenu(input: { client: SupabaseClient; organizationId: string; profileId: string; name: string; tagId: string; chatBarText: string; layoutId: string; actions: RichMenuActionInput[]; imageBytes: Uint8Array; imageContentType: string; applyExisting?: boolean }): Promise<Row> {
   assertLaunchAction("LINE_RICH_MENU_MUTATION_ENABLED");
   const name = input.name.trim();
   const chatBarText = input.chatBarText.trim();
@@ -476,7 +477,15 @@ export async function createLiveRichMenu(input: { client: SupabaseClient; organi
   const { data: tag } = await input.client.from("tags").select("id").eq("organization_id", input.organizationId).eq("id", input.tagId).eq("is_active", true).maybeSingle();
   if (!tag) throw new Error("リッチメニューの対象タグが見つかりません。");
   const image = validateRichMenuImage(input.imageBytes, input.imageContentType);
-  const definition = { size: { width: image.width, height: image.height }, selected: false, name, chatBarText, areas: [{ bounds: { x: 0, y: 0, width: image.width, height: image.height }, action: richMenuAction(input.action) }] };
+  const bounds = scaleRichMenuLayout(input.layoutId, image.width, image.height);
+  if (input.actions.length !== bounds.length) throw new Error("レイアウト内のすべてのボタンを設定してください。");
+  const definition = {
+    size: { width: image.width, height: image.height },
+    selected: false,
+    name,
+    chatBarText,
+    areas: bounds.map((area, index) => ({ bounds: area, action: richMenuAction(input.actions[index]) }))
+  };
   await lineRequest("/v2/bot/richmenu/validate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(definition) });
   const created = await lineRequest("/v2/bot/richmenu", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(definition) });
   const lineId = typeof created.body.richMenuId === "string" ? created.body.richMenuId : null;
@@ -487,8 +496,7 @@ export async function createLiveRichMenu(input: { client: SupabaseClient; organi
     await lineRequest(`/v2/bot/richmenu/${encodeURIComponent(lineId)}/content`, { method: "POST", headers: { "Content-Type": image.contentType }, body }, true);
     const { data: menu, error } = await input.client.from("rich_menus").insert({ organization_id: input.organizationId, name, line_rich_menu_id: lineId, chat_bar_text: chatBarText, width: image.width, height: image.height, selected: false, definition_json: definition, status: "active", is_default: false, managed_by: "api", created_by_profile_id: input.profileId }).select("*").single();
     if (error || !menu) throw new Error("リッチメニューをDBへ保存できませんでした。");
-    const area = definition.areas[0];
-    const areaResult = await input.client.from("rich_menu_areas").insert({ organization_id: input.organizationId, rich_menu_id: menu.id, area_order: 0, ...area.bounds, action_type: area.action.type, action_config_json: area.action });
+    const areaResult = await input.client.from("rich_menu_areas").insert(definition.areas.map((area, areaOrder) => ({ organization_id: input.organizationId, rich_menu_id: menu.id, area_order: areaOrder, ...area.bounds, action_type: area.action.type, action_config_json: area.action })));
     if (areaResult.error) throw new Error("リッチメニュー領域を保存できませんでした。");
     const previousRules = await input.client.from("rich_menu_rules").select("id").eq("organization_id", input.organizationId).eq("tag_id", input.tagId).eq("is_active", true);
     if (previousRules.error) throw new Error("既存のリッチメニュー条件を取得できませんでした。");
