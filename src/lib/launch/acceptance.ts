@@ -11,8 +11,12 @@ let running = false;
 let lastStartedAt = 0;
 
 export function acceptanceRuntimeAllowed(): boolean {
-  const env = getServerEnv();
-  return process.env.VERCEL_ENV === "preview" && env.APP_ENV === "development" && env.LAUNCH_ACCEPTANCE_ENABLED;
+  try {
+    const env = getServerEnv();
+    return process.env.VERCEL_ENV === "preview" && env.APP_ENV === "development" && env.LAUNCH_ACCEPTANCE_ENABLED;
+  } catch {
+    return false;
+  }
 }
 
 export function safeTokenEqual(provided: string | null, expected: string | undefined): boolean {
@@ -33,4 +37,3 @@ export function startAcceptanceRun(now = Date.now()): "started" | "busy" | "rate
 export function finishAcceptanceRun(): void {
   running = false;
 }
-
