@@ -3,6 +3,7 @@ import "server-only";
 import { getServerEnv } from "@/lib/env/server";
 
 export type LaunchFlag =
+  | "LINE_MANUAL_SEND_ENABLED"
   | "LINE_BULK_SEND_ENABLED"
   | "LINE_SCHEDULED_SEND_ENABLED"
   | "LINE_AUTOMATION_SEND_ENABLED"
@@ -37,6 +38,7 @@ export function assertTestRecipient(lineUserId: string): void {
 
 export function launchFlagStatus(): Record<LaunchFlag, boolean> {
   return {
+    LINE_MANUAL_SEND_ENABLED: isLaunchFlagEnabled("LINE_MANUAL_SEND_ENABLED"),
     LINE_BULK_SEND_ENABLED: isLaunchFlagEnabled("LINE_BULK_SEND_ENABLED"),
     LINE_SCHEDULED_SEND_ENABLED: isLaunchFlagEnabled("LINE_SCHEDULED_SEND_ENABLED"),
     LINE_AUTOMATION_SEND_ENABLED: isLaunchFlagEnabled("LINE_AUTOMATION_SEND_ENABLED"),

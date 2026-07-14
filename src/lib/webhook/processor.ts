@@ -1,11 +1,14 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LineEvent } from "@/lib/line/types";
 import { minimalMessagePayload, redactWebhookEventPayload } from "@/lib/line/redaction";
 import { LineProfileClient } from "@/lib/line/client";
+import { handleLiveSurveyPostback } from "@/lib/minimum-launch/live";
 import type { ApplyContactInput, WebhookStore } from "@/lib/webhook/store";
 
 type ProcessContext = {
   organizationId: string;
   profileClient: LineProfileClient;
+  minimumLaunchClient?: SupabaseClient;
 };
 
 export type ProcessResult = "processed" | "ignored" | "duplicate";
@@ -73,6 +76,16 @@ export async function processWebhookEvent(
 
     if (event.type === "unfollow") {
       await applyContact(store, context, event, "unfollow");
+      await store.completeEvent(claim.eventId, "processed");
+      return "processed";
+    }
+
+    if (event.type === "postback") {
+      const postback = (event as LineEvent & { postback?: { data?: string } }).postback;
+      if (postback?.data && context.minimumLaunchClient) {
+        const contact = await applyContact(store, context, event, "message");
+        if (contact) await handleLiveSurveyPostback({ client: context.minimumLaunchClient, organizationId: context.organizationId, contactId: contact.id, data: postback.data, webhookEventId: event.webhookEventId });
+      }
       await store.completeEvent(claim.eventId, "processed");
       return "processed";
     }
