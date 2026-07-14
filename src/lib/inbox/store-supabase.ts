@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { evaluateControlledRecipient } from "@/lib/launch/controlled-recipient";
 import type { ContactRecord, MessageRecord } from "@/lib/webhook/store";
 import type { ConversationDetail, ConversationListItem, ConversationListQuery, ConversationNote, ConversationReadState, ConversationRecord, ConversationUpdate, InboxRole, InboxStore, OutboundCreateInput, OutboundSendUpdate, ProfileSummary, QuickReplyTemplate } from "@/lib/inbox/types";
 
@@ -177,6 +178,10 @@ export class SupabaseInboxStore implements InboxStore {
     const { data, error } = await this.client.from("organization_members").select("role, profiles(id, email, display_name)").eq("organization_id", organizationId);
     if (error) throw new Error("担当者を取得できませんでした。");
     return ((data || []) as Row[]).flatMap((row) => { const profile = Array.isArray(row.profiles) ? row.profiles[0] as Row | undefined : row.profiles as Row | undefined; return profile ? [mapProfile(profile, String(row.role))] : []; });
+  }
+
+  async authorizeControlledRecipient(organizationId: string, lineUserId: string): Promise<{ allowed: boolean; reason: string | null }> {
+    return evaluateControlledRecipient(this.client, organizationId, lineUserId);
   }
 
   async findOutboundByClientRequest(organizationId: string, clientRequestId: string): Promise<MessageRecord | null> {

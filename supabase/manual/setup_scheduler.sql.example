@@ -1,0 +1,12 @@
+-- Example only. Do not put production URL or CRON_SECRET in migrations or git.
+-- Configure pg_cron/pg_net and Supabase Vault in the Dashboard first.
+-- Replace vault keys with your own values through the Dashboard.
+-- select cron.schedule('line-crm-dispatch', '* * * * *', $$
+--   select net.http_post(
+--     url := vault.get('line_crm_production_url') || '/api/cron/dispatch',
+--     headers := jsonb_build_object('Authorization', 'Bearer ' || vault.get('line_cron_secret')),
+--     body := '{}'::jsonb
+--   );
+-- $$);
+-- Check: select * from cron.job_run_details order by start_time desc limit 20;
+-- Pause: select cron.unschedule('line-crm-dispatch');

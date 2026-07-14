@@ -34,6 +34,22 @@ const emailAllowlist = z
       .filter(Boolean)
   );
 
+const idAllowlist = z
+  .string()
+  .default("")
+  .transform((value) => value.split(",").map((item) => item.trim()).filter(Boolean));
+
+const sha256Allowlist = z
+  .string()
+  .default("")
+  .transform((value) => value.split(",").map((item) => item.trim().toLowerCase()).filter(Boolean))
+  .refine((values) => values.every((value) => /^[0-9a-f]{64}$/.test(value)), "SHA-256 hash must be 64 lowercase hexadecimal characters");
+
+const optionalSha256 = z.preprocess(
+  (value) => (value === "" || value === undefined ? undefined : value),
+  z.string().regex(/^[0-9a-f]{64}$/, "SHA-256 hash must be 64 lowercase hexadecimal characters").optional()
+);
+
 export const envSchema = z.object({
   NEXT_PUBLIC_AUTH_MODE: z.enum(["auto", "mock"]).default("auto"),
   NEXT_PUBLIC_APP_URL: optionalUrl,
@@ -42,6 +58,18 @@ export const envSchema = z.object({
   MOCK_LINE_API: booleanEnv(true),
   LINE_MANUAL_SEND_ENABLED: booleanEnv(false),
   MOCK_LINE_SEND_OUTCOME: z.enum(["success", "409", "429", "500", "timeout"]).default("success"),
+  HOSTING_COMMERCIAL_USE_CONFIRMED: booleanEnv(false),
+  LINE_BULK_SEND_ENABLED: booleanEnv(false),
+  LINE_SCHEDULED_SEND_ENABLED: booleanEnv(false),
+  LINE_AUTOMATION_SEND_ENABLED: booleanEnv(false),
+  LINE_AUTO_REPLY_ENABLED: booleanEnv(false),
+  LINE_MEDIA_SEND_ENABLED: booleanEnv(false),
+  LINE_RICH_MENU_MUTATION_ENABLED: booleanEnv(false),
+  LINE_TRACKING_ENABLED: booleanEnv(true),
+  LINE_TEST_USER_IDS: idAllowlist,
+  LINE_TEST_USER_HASHES: sha256Allowlist,
+  LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED: booleanEnv(false),
+  LINE_CONTROLLED_LAUNCH_ENROLLMENT_TOKEN_HASH: optionalSha256,
   ADMIN_EMAIL_ALLOWLIST: emailAllowlist,
 
   NEXT_PUBLIC_SUPABASE_URL: optionalUrl,
@@ -53,12 +81,32 @@ export const envSchema = z.object({
   LINE_CHANNEL_ID: optionalText,
   LINE_CHANNEL_SECRET: optionalText,
   LINE_CHANNEL_ACCESS_TOKEN: optionalText,
+  LINE_EXPECTED_BASIC_ID: optionalText,
+  LINE_EXPECTED_DISPLAY_NAME: optionalText,
   LINE_ADMIN_USER_ID: optionalText,
   NEXT_PUBLIC_LIFF_ID: optionalText,
   LINE_LOGIN_CHANNEL_ID: optionalText,
   LINE_LOGIN_CHANNEL_SECRET: optionalText,
 
+
   CRON_SECRET: optionalText,
+  SCHEDULER_PROVIDER: z.enum(["supabase_cron", "vercel_cron", "manual"]).default("supabase_cron"),
+  SCHEDULER_STALE_AFTER_MINUTES: integerEnv(5),
+  MAX_CAMPAIGN_RECIPIENTS: integerEnv(50000),
+  MAX_MULTICAST_BATCH_SIZE: integerEnv(500).refine((value) => value > 0 && value <= 500),
+  LINE_MEDIA_BUCKET: z.string().min(1).default("line-media"),
+  MEDIA_IMAGE_MAX_BYTES: integerEnv(8388608),
+  MEDIA_VIDEO_MAX_BYTES: integerEnv(52428800),
+  MEDIA_AUDIO_MAX_BYTES: integerEnv(20971520),
+  MEDIA_STORAGE_WARNING_BYTES: integerEnv(734003200),
+  MEDIA_STORAGE_STOP_BYTES: integerEnv(943718400),
+  TRACKING_SIGNING_SECRET: optionalText,
+  TRACKING_TOKEN_TTL_SECONDS: integerEnv(2592000),
+  AUTOMATION_MAX_ATTEMPTS: integerEnv(3),
+  AUTOMATION_LEASE_SECONDS: integerEnv(120),
+  CAMPAIGN_DETAIL_RETENTION_DAYS: integerEnv(90),
+  JOB_RETENTION_DAYS: integerEnv(90),
+  ANALYTICS_EVENT_RETENTION_DAYS: integerEnv(730),
   MEDIA_RETENTION_DAYS: integerEnv(30),
   WEBHOOK_RETENTION_DAYS: integerEnv(30),
   MESSAGE_RETENTION_DAYS: integerEnv(365),

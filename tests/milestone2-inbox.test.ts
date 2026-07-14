@@ -109,4 +109,34 @@ describe("Milestone 2 outbound safety", () => {
     expect(retried.message.status).toBe("accepted");
     expect(new Set(retryKeys).size).toBe(1);
   });
+
+  it("rejects a live recipient at the store-backed server policy before LINE API use", async () => {
+    process.env.NEXT_PUBLIC_AUTH_MODE = "mock";
+    process.env.MOCK_LINE_API = "true";
+    const store = new MockWebhookStore();
+    await processWebhookEvent(event("text"), store, { organizationId, profileClient });
+    const conversation = (await store.listConversations({ organizationId, profileId: "mock-user", filter: "all", page: 1, pageSize: 50 })).items[0]!.conversation;
+    Object.assign(store, {
+      authorizeControlledRecipient: async () => ({ allowed: false, reason: "Sho本人以外への送信を拒否しました。" })
+    });
+    let pushed = false;
+    const pushClient = {
+      pushTextMessage: async () => {
+        pushed = true;
+        return { accepted: true as const, lineRequestId: "should-not-run", lineAcceptedRequestId: null, lineSentMessageId: null };
+      }
+    };
+
+    await expect(sendInboxTextMessage({
+      store,
+      organizationId,
+      profileId: "mock-user",
+      role: "owner",
+      conversationId: conversation.id,
+      text: "must not send",
+      clientRequestId: crypto.randomUUID(),
+      pushClient
+    })).rejects.toThrow("Sho本人以外");
+    expect(pushed).toBe(false);
+  });
 });

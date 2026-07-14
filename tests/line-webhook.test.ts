@@ -6,6 +6,7 @@ import { getLineFixture } from "../src/lib/line/fixtures";
 import { LineProfileClient } from "../src/lib/line/client";
 import { processWebhookEvent, processWebhookEvents } from "../src/lib/webhook/processor";
 import { MockWebhookStore } from "../src/lib/webhook/store";
+import { CONTROLLED_ENROLLMENT_REDACTED_TEXT } from "../src/lib/launch/controlled-recipient";
 import type { LineEvent } from "../src/lib/line/types";
 
 const secret = "test-channel-secret";
@@ -77,6 +78,28 @@ describe("Mock webhook store integration", () => {
     await processWebhookEvent(olderUnfollow, store, context);
     expect((await store.listContacts({ page: 1, pageSize: 50 })).items[0]?.friendStatus).toBe("following");
   });
+
+  it("enrolls from the signed text event without retaining the one-time phrase", async () => {
+    const store = new MockWebhookStore();
+    const enrollmentInputs: Array<{ lineUserId: string; message?: string | null }> = [];
+    const source = eventFromFixture("text");
+    const result = await processWebhookEvent(source, store, {
+      organizationId,
+      profileClient,
+      controlledRecipientEnrollment: async (input) => {
+        enrollmentInputs.push({ lineUserId: input.lineUserId, message: input.message });
+        return { matched: true, status: "enrolled" };
+      }
+    });
+
+    expect(result).toBe("processed");
+    expect(enrollmentInputs).toEqual([{ lineUserId: source.source?.userId, message: "fixture message" }]);
+    const contact = (await store.listContacts({ page: 1, pageSize: 50 })).items[0]!;
+    const [message] = await store.listMessages(organizationId, contact.id);
+    expect(message?.textContent).toBe(CONTROLLED_ENROLLMENT_REDACTED_TEXT);
+    expect(JSON.stringify(message?.payloadJson)).not.toContain("fixture message");
+    expect(message?.payloadJson).toMatchObject({ hasText: false, controlledLaunchEnrollment: true });
+  });
 });
 
 describe("LINE profile lookup", () => {
@@ -90,31 +113,32 @@ describe("LINE profile lookup", () => {
 });
 
 describe("LINE connection test", () => {
-  it("reports mock mode and checks the signed webhook without exposing secrets", async () => {
+  it("checks mock webhook reachability without sending a signature", async () => {
     const requests: Array<{ url: string; signature: string | null }> = [];
     const result = await runLineConnectionTest(
       {
         environment: "development",
         mode: "mock",
         appUrl: "http://127.0.0.1:3000",
-        channelSecret: secret
       },
       async (url, init) => {
         const requestUrl = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
         requests.push({ url: requestUrl, signature: new Headers(init?.headers).get("x-line-signature") });
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        return new Response(JSON.stringify({ ok: true }), { status: 401 });
       }
     );
 
     expect(result.ok).toBe(true);
-    expect(result.checks.lineApi.detail).toContain("mock mode");
+    expect(result.checks.lineApi.status).toBe("skip");
     expect(result.checks.webhook.status).toBe("ok");
+    expect(result.checks.unsignedSignature.status).toBe("skip");
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.signature).toBeTruthy();
+    expect(requests[0]?.signature).toBeNull();
     expect(JSON.stringify(result)).not.toContain(secret);
   });
 
-  it("reports live API authentication and webhook failures as NG", async () => {
+  it("verifies bot identity and all three live signature paths without sending a message", async () => {
+    const webhookRequests: Array<string | null> = [];
     const result = await runLineConnectionTest(
       {
         environment: "production",
@@ -123,17 +147,117 @@ describe("LINE connection test", () => {
         organizationId,
         channelId: "1234567890",
         channelSecret: secret,
-        channelAccessToken: "test-access-token"
+        channelAccessToken: "test-access-token",
+        expectedBasicId: "@612evfuv",
+        expectedDisplayName: "GP PRモニター窓口"
       },
-      async (url) => {
+      async (url, init) => {
         const requestUrl = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
-        return new Response(null, { status: requestUrl.includes("api.line.me") ? 401 : 503 });
+        if (requestUrl.includes("api.line.me")) {
+          return Response.json({
+            displayName: "GP PRモニター窓口",
+            basicId: "@612evfuv",
+            userId: "U-must-not-be-returned"
+          });
+        }
+        const signature = new Headers(init?.headers).get("x-line-signature");
+        webhookRequests.push(signature);
+        if (!signature || signature === "invalid-connection-test-signature") return new Response(null, { status: 401 });
+        expect(verifyLineSignature(String(init?.body), signature, secret)).toBe(true);
+        return Response.json({ ok: true, events: 0 });
+      }
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.checks.environment.status).toBe("ok");
+    expect(result.checks.lineApi.status).toBe("ok");
+    expect(result.checks.botIdentity.status).toBe("ok");
+    expect(result.checks.webhook.status).toBe("ok");
+    expect(result.checks.unsignedSignature.status).toBe("ok");
+    expect(result.checks.invalidSignature.status).toBe("ok");
+    expect(result.checks.validSignature.status).toBe("ok");
+    expect(result.bot).toEqual({ displayName: "GP PRモニター窓口", basicId: "@612evfuv" });
+    expect(webhookRequests).toHaveLength(3);
+    expect(JSON.stringify(result)).not.toContain("U-must-not-be-returned");
+    expect(JSON.stringify(result)).not.toContain(secret);
+    expect(JSON.stringify(result)).not.toContain("test-access-token");
+  });
+
+  it("fails when the token belongs to a different LINE official account", async () => {
+    const result = await runLineConnectionTest(
+      {
+        environment: "production",
+        mode: "live",
+        appUrl: "https://crm.example.com",
+        organizationId,
+        channelId: "1234567890",
+        channelSecret: secret,
+        channelAccessToken: "test-access-token",
+        expectedBasicId: "@612evfuv",
+        expectedDisplayName: "GP PRモニター窓口"
+      },
+      async (url, init) => {
+        const requestUrl = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+        if (requestUrl.includes("api.line.me")) return Response.json({ displayName: "別アカウント", basicId: "@other" });
+        const signature = new Headers(init?.headers).get("x-line-signature");
+        return new Response(null, { status: signature && signature !== "invalid-connection-test-signature" ? 200 : 401 });
       }
     );
 
     expect(result.ok).toBe(false);
-    expect(result.checks.environment.status).toBe("ok");
-    expect(result.checks.lineApi.status).toBe("ng");
+    expect(result.checks.lineApi.status).toBe("ok");
+    expect(result.checks.botIdentity.status).toBe("ng");
+  });
+
+  it.each([404, 500])("treats HTTP %i as a webhook failure", async (webhookStatus) => {
+    const result = await runLineConnectionTest(
+      {
+        environment: "production",
+        mode: "live",
+        appUrl: "https://crm.example.com",
+        organizationId,
+        channelId: "1234567890",
+        channelSecret: secret,
+        channelAccessToken: "test-access-token",
+        expectedBasicId: "@612evfuv",
+        expectedDisplayName: "GP PRモニター窓口"
+      },
+      async (url) => {
+        const requestUrl = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+        return requestUrl.includes("api.line.me")
+          ? Response.json({ displayName: "GP PRモニター窓口", basicId: "@612evfuv" })
+          : new Response(null, { status: webhookStatus });
+      }
+    );
+
+    expect(result.ok).toBe(false);
     expect(result.checks.webhook.status).toBe("ng");
+  });
+
+  it("does not accept a protection-layer 401 as a valid signed webhook response", async () => {
+    const result = await runLineConnectionTest(
+      {
+        environment: "production",
+        mode: "live",
+        appUrl: "https://crm.example.com",
+        organizationId,
+        channelId: "1234567890",
+        channelSecret: secret,
+        channelAccessToken: "test-access-token",
+        expectedBasicId: "@612evfuv",
+        expectedDisplayName: "GP PRモニター窓口"
+      },
+      async (url) => {
+        const requestUrl = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+        return requestUrl.includes("api.line.me")
+          ? Response.json({ displayName: "GP PRモニター窓口", basicId: "@612evfuv" })
+          : new Response(null, { status: 401 });
+      }
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.checks.unsignedSignature.status).toBe("ok");
+    expect(result.checks.invalidSignature.status).toBe("ok");
+    expect(result.checks.validSignature.status).toBe("ng");
   });
 });

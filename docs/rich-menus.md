@@ -1,0 +1,3 @@
+# Rich menus
+
+API-managedとexternalを区別します。DraftはLINEへ変更を送りません。`LINE_RICH_MENU_MUTATION_ENABLED=false`ではmutation不可、default変更はownerの確認文と管理者自身へのper-user test linkが必須です。external menuは削除・上書きしません。API menuのversionと直前defaultを記録し、rollbackします。

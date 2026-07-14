@@ -1,0 +1,5 @@
+# Automations and auto reply
+
+Scenarioはversionを固定してenrollmentします。waitはscheduled_jobsへ変換し、tag/field actionはidempotentです。blocked/suppressedのsend_messageはskip/stopし、quota不足で翌月へ自動繰越しません。
+
+Auto replyの優先順位はsurvey free text、survey postback、exact、prefix、contains、regexです。reply tokenは保存せず同一Webhook内で使います。`LINE_AUTO_REPLY_ENABLED=false`では評価だけを記録し返信しません。OA Managerの応答メッセージ・あいさつメッセージとの二重応答を人間が確認してください。

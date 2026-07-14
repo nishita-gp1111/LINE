@@ -1,0 +1,9 @@
+# Local Supabase configuration for private LINE media storage.
+# Production bucket/RLS is applied by the migration and reviewed manually.
+[storage]
+file_size_limit = "50MiB"
+
+[storage.buckets.line-media]
+public = false
+file_size_limit = "50MiB"
+allowed_mime_types = ["image/jpeg", "image/png", "video/mp4", "audio/mpeg", "audio/mp4", "audio/x-m4a"]

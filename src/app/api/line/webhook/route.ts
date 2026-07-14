@@ -8,6 +8,7 @@ import { lineWebhookPayloadSchema } from "@/lib/line/types";
 import { processWebhookEvents } from "@/lib/webhook/processor";
 import { getMockWebhookStore } from "@/lib/webhook/store";
 import { createSupabaseWebhookStore } from "@/lib/webhook/store-supabase";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
@@ -56,7 +57,8 @@ export async function POST(request: Request) {
       profileClient: new LineProfileClient({
         mode: config.mode,
         channelAccessToken: config.channelAccessToken
-      })
+      }),
+      minimumLaunchClient: config.mode === "live" ? createSupabaseAdminClient() || undefined : undefined
     });
     return NextResponse.json({ ok: true, events: parsed.data.events.length, ...result });
   } catch (error) {

@@ -5,6 +5,7 @@ import { getServerEnv } from "@/lib/env/server";
 import { createLinePushClient, lineTextMessageSchema, LineSendConfigurationError, type LinePushClient, type LinePushResult } from "@/lib/line/send";
 import type { InboxRole, InboxStore } from "@/lib/inbox/types";
 import type { MessageRecord } from "@/lib/webhook/store";
+import { assertTestRecipient, isLaunchFlagEnabled } from "@/lib/launch/flags";
 
 export class InboxSendError extends Error {
   constructor(message: string) {
@@ -23,6 +24,7 @@ export type SendMessageInput = {
   clientRequestId?: string;
   messageId?: string;
   pushClient?: LinePushClient;
+  gate?: "manual" | "automation";
 };
 
 function safeResultMessage(result: Extract<LinePushResult, { accepted: false }>): string {
@@ -53,7 +55,8 @@ async function resolveMessage(input: SendMessageInput): Promise<{ message: Messa
 export async function sendInboxTextMessage(input: SendMessageInput): Promise<{ message: MessageRecord; reused: boolean }> {
   if (input.role === "viewer") throw new InboxSendError("viewerはメッセージを送信できません。");
   const env = getServerEnv();
-  if (!env.MOCK_LINE_API && !env.LINE_MANUAL_SEND_ENABLED) throw new InboxSendError("手動送信は無効です。LINE_MANUAL_SEND_ENABLEDを確認してください。");
+  const sendFlag = input.gate === "automation" ? "LINE_AUTOMATION_SEND_ENABLED" : "LINE_MANUAL_SEND_ENABLED";
+  if (!env.MOCK_LINE_API && !isLaunchFlagEnabled(sendFlag)) throw new InboxSendError(`${input.gate === "automation" ? "自動送信" : "手動送信"}は無効です。`);
   if (!input.messageId && input.text !== undefined) {
     const parsed = lineTextMessageSchema.safeParse(input.text);
     if (!parsed.success) throw new InboxSendError(parsed.error.issues[0]?.message || "本文が不正です。");
@@ -63,6 +66,16 @@ export async function sendInboxTextMessage(input: SendMessageInput): Promise<{ m
   const detail = await input.store.getConversation(input.organizationId, resolved.conversationId, input.profileId);
   if (!detail || detail.contact.id !== resolved.contactId) throw new InboxSendError("送信先が見つかりません。");
   if (detail.contact.friendStatus === "blocked") throw new InboxSendError("このユーザーは現在ブロック状態です。");
+  try {
+    if (input.store.authorizeControlledRecipient) {
+      const policy = await input.store.authorizeControlledRecipient(input.organizationId, detail.contact.lineUserId);
+      if (!policy.allowed) throw new Error(policy.reason || "送信先が許可されていません。");
+    } else {
+      assertTestRecipient(detail.contact.lineUserId);
+    }
+  } catch (error) {
+    throw new InboxSendError(error instanceof Error ? error.message : "送信先が許可されていません。");
+  }
   if (resolved.message.status === "accepted" || resolved.message.status === "sending") return { message: resolved.message, reused: true };
   if (resolved.message.status !== "queued" && resolved.message.status !== "retryable_failed") throw new InboxSendError("このメッセージは送信できません。");
   if (input.messageId && resolved.message.failedAt && Date.now() - Date.parse(resolved.message.failedAt) > 24 * 60 * 60 * 1000) throw new InboxSendError("再試行期限を過ぎています。新規メッセージとして内容を確認して送信してください。");

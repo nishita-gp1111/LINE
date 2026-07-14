@@ -11,5 +11,5 @@ test("logs in through mock mode", async ({ page }) => {
   await page.getByRole("button", { name: "ログイン" }).click();
 
   await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole("heading", { name: "管理画面" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "今日の顧客対応を、ここから。" })).toBeVisible();
 });

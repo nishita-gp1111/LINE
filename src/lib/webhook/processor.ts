@@ -1,11 +1,28 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LineEvent } from "@/lib/line/types";
 import { minimalMessagePayload, redactWebhookEventPayload } from "@/lib/line/redaction";
 import { LineProfileClient } from "@/lib/line/client";
+import {
+  CONTROLLED_ENROLLMENT_REDACTED_TEXT,
+  tryEnrollControlledRecipient,
+  type ControlledEnrollmentResult
+} from "@/lib/launch/controlled-recipient";
+import { handleLiveSurveyPostback, sendFollowSurveyIfConfigured } from "@/lib/minimum-launch/live";
 import type { ApplyContactInput, WebhookStore } from "@/lib/webhook/store";
 
-type ProcessContext = {
+type ControlledRecipientEnrollment = (input: {
+  organizationId: string;
+  contactId: string;
+  lineUserId: string;
+  webhookEventId: string;
+  message?: string | null;
+}) => Promise<ControlledEnrollmentResult>;
+
+export type ProcessContext = {
   organizationId: string;
   profileClient: LineProfileClient;
+  minimumLaunchClient?: SupabaseClient;
+  controlledRecipientEnrollment?: ControlledRecipientEnrollment;
 };
 
 export type ProcessResult = "processed" | "ignored" | "duplicate";
@@ -67,6 +84,9 @@ export async function processWebhookEvent(
     if (event.type === "follow") {
       const contact = await applyContact(store, context, event, "follow");
       if (contact && store.ensureConversationForContact) await store.ensureConversationForContact(context.organizationId, contact.id, eventAt(event));
+      if (contact && context.minimumLaunchClient) {
+        await sendFollowSurveyIfConfigured({ client: context.minimumLaunchClient, organizationId: context.organizationId, contactId: contact.id, webhookEventId: event.webhookEventId });
+      }
       await store.completeEvent(claim.eventId, "processed");
       return "processed";
     }
@@ -77,11 +97,37 @@ export async function processWebhookEvent(
       return "processed";
     }
 
+    if (event.type === "postback") {
+      const postback = (event as LineEvent & { postback?: { data?: string } }).postback;
+      if (postback?.data && context.minimumLaunchClient) {
+        const contact = await applyContact(store, context, event, "message");
+        if (contact) await handleLiveSurveyPostback({ client: context.minimumLaunchClient, organizationId: context.organizationId, contactId: contact.id, data: postback.data, webhookEventId: event.webhookEventId });
+      }
+      await store.completeEvent(claim.eventId, "processed");
+      return "processed";
+    }
+
     if (event.type === "message" && event.message) {
       const contact = await applyContact(store, context, event, "message");
       if (!contact) {
         await store.completeEvent(claim.eventId, "ignored");
         return "ignored";
+      }
+      let enrollment: ControlledEnrollmentResult = { matched: false, status: "not_enrollment" };
+      const enrollmentInput = {
+        organizationId: context.organizationId,
+        contactId: contact.id,
+        lineUserId: contact.lineUserId,
+        webhookEventId: event.webhookEventId,
+        message: event.message.type === "text" ? event.message.text || null : null
+      };
+      if (context.controlledRecipientEnrollment) {
+        enrollment = await context.controlledRecipientEnrollment(enrollmentInput);
+      } else if (context.minimumLaunchClient) {
+        enrollment = await tryEnrollControlledRecipient({
+          client: context.minimumLaunchClient,
+          ...enrollmentInput
+        });
       }
       const inserted = await store.insertInboundMessage({
         organizationId: context.organizationId,
@@ -89,13 +135,25 @@ export async function processWebhookEvent(
         lineMessageId: event.message.id || null,
         lineRequestId: event.webhookEventId,
         messageType: event.message.type,
-        textContent: event.message.type === "text" ? event.message.text || null : null,
-        payloadJson: minimalMessagePayload(event),
+        textContent: enrollment.matched
+          ? CONTROLLED_ENROLLMENT_REDACTED_TEXT
+          : event.message.type === "text" ? event.message.text || null : null,
+        payloadJson: enrollment.matched
+          ? { type: "text", hasText: false, messageIdPresent: true, controlledLaunchEnrollment: true }
+          : minimalMessagePayload(event),
         eventAt: eventAt(event)
       });
       if (inserted.inserted && inserted.message && store.ensureConversationForContact) {
         const conversation = await store.ensureConversationForContact(context.organizationId, contact.id, eventAt(event), inserted.message);
         if (store.incrementUnreadForInbound) await store.incrementUnreadForInbound(context.organizationId, conversation.id, inserted.message.id);
+      }
+      if (enrollment.status === "enrolled" && context.minimumLaunchClient) {
+        await sendFollowSurveyIfConfigured({
+          client: context.minimumLaunchClient,
+          organizationId: context.organizationId,
+          contactId: contact.id,
+          webhookEventId: event.webhookEventId
+        });
       }
       await store.completeEvent(claim.eventId, "processed");
       return "processed";

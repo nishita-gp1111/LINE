@@ -2,7 +2,9 @@ import Link from "next/link";
 import ConnectionActions from "@/app/admin/settings/line/connection-actions";
 import { getServerEnv } from "@/lib/env/server";
 import { getWebhookMetrics } from "@/lib/contacts/queries";
+import { getControlledRecipientRecord } from "@/lib/launch/controlled-recipient";
 import { getWebhookUrl } from "@/lib/line/webhook-url";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 function formatDate(value: string | null, timezone: string): string {
   if (!value) return "未受信";
@@ -17,6 +19,16 @@ export default async function LineSettingsPage() {
   const env = getServerEnv();
   const metrics = await getWebhookMetrics();
   const webhookUrl = getWebhookUrl(env.NEXT_PUBLIC_APP_URL);
+  const admin = createSupabaseAdminClient();
+  let controlledRecipientStatus = env.MOCK_LINE_API ? "Mock mode" : "未登録（送信停止）";
+  if (!env.MOCK_LINE_API && admin && env.LINE_ORGANIZATION_ID) {
+    try {
+      const recipient = await getControlledRecipientRecord(admin, env.LINE_ORGANIZATION_ID);
+      controlledRecipientStatus = recipient ? "Sho本人1名を登録済み" : "本人登録メッセージ待ち";
+    } catch {
+      controlledRecipientStatus = "DB未確認（送信停止）";
+    }
+  }
   const liveReady = Boolean(
     env.LINE_CHANNEL_ID && env.LINE_CHANNEL_SECRET && env.LINE_CHANNEL_ACCESS_TOKEN
   );
@@ -70,11 +82,16 @@ export default async function LineSettingsPage() {
             <p className="text-xs font-bold text-ink/50">接続状態</p>
             <p className="mt-2 font-bold">
               {env.MOCK_LINE_API
-                ? "mock modeで署名検証・Webhook処理を確認できます。"
+                ? "mock modeでWebhook処理を確認できます。接続確認はURL到達のみ行います。"
                 : liveReady
                   ? "設定済み（接続テストによるメッセージ送信は行っていません）"
                   : "LINE環境変数が不足しています。"}
             </p>
+          </div>
+          <div>
+            <p className="text-xs font-bold text-ink/50">Controlled Launch送信先</p>
+            <p className="mt-2 font-bold">{controlledRecipientStatus}</p>
+            <p className="mt-1 text-sm text-ink/60">LINE User IDやそのハッシュは画面へ表示しません。</p>
           </div>
         </section>
 
@@ -86,9 +103,9 @@ export default async function LineSettingsPage() {
             <h2 className="mt-2 text-xl font-black">LINE Developers Consoleでの確認</h2>
             <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-6 text-ink/75">
               <li>対象ProviderのMessaging API channelを開き、Messaging APIタブを表示します。</li>
-              <li>Webhook URLに上記URLを登録し、「Use webhook」を有効にします。</li>
-              <li>Webhook URL欄の「Verify」を押します。LINE Platformが署名付きの空イベントを送り、HTTP 200を確認します。</li>
-              <li>この画面の「接続確認」で、環境変数・LINE API認証・Webhook URLを再確認します。</li>
+              <li>本番コード・DB・環境変数の準備完了後にだけ、Webhook URLへ上記URLを登録し、「Use webhook」を有効にします。</li>
+              <li>Webhook URL欄の「Verify」を押します。LINE Platformが署名付きリクエストを送り、HTTP 200を確認します。</li>
+              <li>この画面の「接続確認」で、接続先アカウント、未署名401、不正署名401、正しい署名200まで個別に確認します。</li>
             </ol>
             <a className="mt-5 inline-block text-sm font-bold text-moss hover:underline" href="https://developers.line.biz/en/docs/messaging-api/verify-webhook-url/" target="_blank" rel="noreferrer">
               LINE公式: Verify webhook URL →
@@ -96,13 +113,13 @@ export default async function LineSettingsPage() {
           </article>
           <article className="rounded-xl border border-line bg-white p-6">
             <p className="text-xs font-bold text-ink/50">LINE Developers Consoleで設定する内容</p>
-            <h2 className="mt-2 text-xl font-black">Milestone 1の推奨設定</h2>
+            <h2 className="mt-2 text-xl font-black">Minimum Production Launch設定</h2>
             <ul className="mt-4 list-disc space-y-3 pl-5 text-sm leading-6 text-ink/75">
               <li>Messaging APIタブ: Webhook URLを設定し、「Use webhook」をONにします。</li>
               <li>再送を利用する場合は「Webhook redelivery」をONにします。本システムはwebhookEventIdで重複排除します。</li>
               <li>Basic settings: Channel Secretを本番環境のsecretへ登録します。画面には値を表示しません。</li>
               <li>Messaging API settings: Channel access tokenを発行し、本番環境のsecretへ登録します。</li>
-              <li>返信処理はMilestone 2以降のため、不要なGreeting messages / Auto-reply messagesはOFFにします。</li>
+              <li>CRM側の個別処理と重複しないよう、Greeting messages / Auto-reply messagesはOFFにします。</li>
             </ul>
             <a className="mt-5 inline-block text-sm font-bold text-moss hover:underline" href="https://developers.line.biz/en/docs/messaging-api/receiving-messages/" target="_blank" rel="noreferrer">
               LINE公式: Receive messages (webhook) →

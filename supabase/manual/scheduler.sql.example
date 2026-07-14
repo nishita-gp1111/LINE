@@ -1,0 +1,27 @@
+-- Idempotent example. Run after pg_cron/pg_net and Vault are enabled.
+-- Store values under Vault keys line_crm_production_url and line_cron_secret.
+do $$
+declare job_id bigint;
+begin
+  for job_id in select jobid from cron.job where jobname in ('line-crm-dispatch', 'line-crm-maintenance') loop
+    perform cron.unschedule(job_id);
+  end loop;
+  perform cron.schedule('line-crm-dispatch', '* * * * *', $job$
+    select net.http_post(
+      url := (select decrypted_secret from vault.decrypted_secrets where name = 'line_crm_production_url') || '/api/cron/dispatch',
+      headers := jsonb_build_object('Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'line_cron_secret')),
+      body := '{}'::jsonb
+    );
+  $job$);
+  perform cron.schedule('line-crm-maintenance', '17 3 * * *', $job$
+    select net.http_post(
+      url := (select decrypted_secret from vault.decrypted_secrets where name = 'line_crm_production_url') || '/api/cron/maintenance',
+      headers := jsonb_build_object('Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'line_cron_secret')),
+      body := '{}'::jsonb
+    );
+  $job$);
+end $$;
+
+-- Check: select jobid, jobname, schedule, active from cron.job where jobname like 'line-crm-%';
+-- Runs:  select * from cron.job_run_details where jobid in (select jobid from cron.job where jobname like 'line-crm-%') order by start_time desc limit 20;
+-- Remove: select cron.unschedule(jobid) from cron.job where jobname in ('line-crm-dispatch','line-crm-maintenance');

@@ -132,6 +132,7 @@ export type InboxStore = {
   updateQuickReply(organizationId: string, id: string, name: string, textContent: string, sortOrder: number, isActive: boolean): Promise<QuickReplyTemplate>;
   deleteQuickReply(organizationId: string, id: string): Promise<void>;
   listProfiles(organizationId: string): Promise<ProfileSummary[]>;
+  authorizeControlledRecipient?(organizationId: string, lineUserId: string): Promise<{ allowed: boolean; reason: string | null }>;
   findOutboundByClientRequest(organizationId: string, clientRequestId: string): Promise<MessageRecord | null>;
   createOutboundMessage(input: OutboundCreateInput): Promise<{ created: boolean; message: MessageRecord }>;
   claimOutboundMessage(organizationId: string, messageId: string, profileId: string): Promise<MessageRecord>;
