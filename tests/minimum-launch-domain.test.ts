@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignmentEffectMetadata, followSurveyClientRequestId, parseSurveyPostbackData, selectRichMenuRule, shouldRunTagAddedEffects, surveyCompletionClientRequestId, surveyPostbackData, surveyQuestionClientRequestId, surveyResponseKey } from "@/lib/minimum-launch/domain";
+import { assignmentEffectMetadata, followSurveyClientRequestId, parseSurveyPostbackData, selectRichMenuRule, shouldRunTagAddedEffects, surveyCompletionClientRequestId, surveyGreetingClientRequestId, surveyPostbackData, surveyQuestionClientRequestId, surveyResponseKey, surveyRichMenuJobKey, surveyRichMenuRunAt } from "@/lib/minimum-launch/domain";
 import { validateRichMenuImage } from "@/lib/minimum-launch/rich-menu-image";
 
 function png(width: number, height: number): Uint8Array {
@@ -23,6 +23,7 @@ describe("minimum internal launch domain", () => {
   it("creates one stable outbound id for a redelivered follow event", () => {
     expect(followSurveyClientRequestId("event-1", "survey-1", "contact-1")).toBe("minimum-follow-survey:event-1:survey-1:contact-1");
     expect(followSurveyClientRequestId("event-1", "survey-1", "contact-1")).toBe(followSurveyClientRequestId("event-1", "survey-1", "contact-1"));
+    expect(surveyGreetingClientRequestId("event-1", "survey-1", "contact-1")).toBe("minimum-survey-greeting:event-1:survey-1:contact-1");
   });
 
   it("binds survey postbacks and follow-up sends to one session", () => {
@@ -33,6 +34,8 @@ describe("minimum internal launch domain", () => {
     expect(parseSurveyPostbackData("not-a-survey")).toBeNull();
     expect(surveyQuestionClientRequestId("session-1", "question-2")).toBe("minimum-survey-question:session-1:question-2");
     expect(surveyCompletionClientRequestId("session-1")).toBe("minimum-survey-complete:session-1");
+    expect(surveyRichMenuJobKey("session-1")).toBe("survey-rich-menu:session-1");
+    expect(surveyRichMenuRunAt(new Date("2026-07-15T00:00:00.000Z"), 30)).toBe("2026-07-15T00:30:00.000Z");
   });
 
   it("records whether a tag assignment was the effective transition", () => {

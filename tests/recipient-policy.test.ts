@@ -72,4 +72,23 @@ describe("live recipient policy", () => {
       lineUserId: "Usho"
     }).allowed).toBe(false);
   });
+
+  it("allows individual Production followers only after the explicit all-followers switch", () => {
+    expect(evaluateRecipientPolicy({
+      appEnvironment: "production",
+      mockLineApi: false,
+      recipientMode: "all_followers",
+      allowedLineUserIds: [],
+      allowedLineUserHashes: [],
+      lineUserId: "Ucustomer"
+    }).allowed).toBe(true);
+    expect(evaluateRecipientPolicy({
+      appEnvironment: "development",
+      mockLineApi: false,
+      recipientMode: "all_followers",
+      allowedLineUserIds: [],
+      allowedLineUserHashes: [],
+      lineUserId: "Ucustomer"
+    }).allowed).toBe(false);
+  });
 });

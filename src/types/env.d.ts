@@ -15,6 +15,7 @@ declare namespace NodeJS {
     LINE_MEDIA_SEND_ENABLED?: "true" | "false";
     LINE_RICH_MENU_MUTATION_ENABLED?: "true" | "false";
     LINE_TRACKING_ENABLED?: "true" | "false";
+    LINE_RECIPIENT_MODE?: "controlled" | "all_followers";
     LINE_TEST_USER_IDS?: string;
     LINE_TEST_USER_HASHES?: string;
     LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED?: "true" | "false";

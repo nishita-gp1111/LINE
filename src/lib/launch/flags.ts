@@ -37,6 +37,7 @@ export function assertTestRecipient(lineUserId: string): void {
   const policy = evaluateRecipientPolicy({
     appEnvironment: env.APP_ENV,
     mockLineApi: env.MOCK_LINE_API,
+    recipientMode: env.LINE_RECIPIENT_MODE,
     allowedLineUserIds: env.LINE_TEST_USER_IDS,
     allowedLineUserHashes: env.LINE_TEST_USER_HASHES,
     lineUserId
@@ -66,7 +67,7 @@ export function launchBlockers(options: { allowedRecipientCount?: number } = {})
   if (!env.MOCK_LINE_API && !env.LINE_CHANNEL_ACCESS_TOKEN) blockers.push("LINE_CHANNEL_ACCESS_TOKENが未設定です。");
   const allowedRecipientCount = options.allowedRecipientCount
     ?? configuredRecipientCount(env.LINE_TEST_USER_IDS, env.LINE_TEST_USER_HASHES);
-  if (!env.MOCK_LINE_API && allowedRecipientCount !== 1) {
+  if (!env.MOCK_LINE_API && env.LINE_RECIPIENT_MODE === "controlled" && allowedRecipientCount !== 1) {
     blockers.push("Controlled Launch送信allowlistをSho本人1名だけに設定してください。");
   }
 

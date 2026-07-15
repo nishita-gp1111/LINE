@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 export type RecipientPolicyInput = {
   appEnvironment: "development" | "test" | "production";
   mockLineApi: boolean;
+  recipientMode?: "controlled" | "all_followers";
   allowedLineUserIds: string[];
   allowedLineUserHashes: string[];
   lineUserId: string;
@@ -31,12 +32,15 @@ export function configuredRecipientCount(allowedLineUserIds: string[], allowedLi
   return configuredRecipientHashes(allowedLineUserIds, allowedLineUserHashes).length;
 }
 
-/**
- * Live sends fail closed. Production is intentionally limited to one explicitly
- * configured LINE user until the controlled-launch restriction is removed.
- */
+/** Live sends fail closed unless Production explicitly opts into all-followers mode. */
 export function evaluateRecipientPolicy(input: RecipientPolicyInput): RecipientPolicyState {
   if (input.mockLineApi) return { allowed: true, reason: null };
+
+  if (input.recipientMode === "all_followers") {
+    return input.appEnvironment === "production"
+      ? { allowed: true, reason: null }
+      : { allowed: false, reason: "全フォロワー送信はProductionでのみ利用できます。" };
+  }
 
   const allowedHashes = configuredRecipientHashes(input.allowedLineUserIds, input.allowedLineUserHashes);
   const configuredCount = allowedHashes.length;

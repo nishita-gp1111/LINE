@@ -66,16 +66,15 @@ export async function getLaunchReadiness(): Promise<{ state: ReadinessState; che
   checks.push({ key: "organization", label: "Production organization", ok: organizationOk, note: organizationNote });
   checks.push({ key: "migration", label: "Minimum Launch migrations", ok: migrationOk, note: migrationNote });
 
-  const allowlistOk = env.MOCK_LINE_API || (
-    allowlistDatabaseOk &&
-    allowedRecipientCount === 1
-  );
+  const allowlistOk = env.MOCK_LINE_API || env.LINE_RECIPIENT_MODE === "all_followers" || (allowlistDatabaseOk && allowedRecipientCount === 1);
   checks.push({
     key: "allowlist",
     label: "LINE recipient allowlist",
     ok: allowlistOk,
     note: env.MOCK_LINE_API
       ? "Mock mode"
+      : env.LINE_RECIPIENT_MODE === "all_followers"
+        ? "Productionのフォロワーへ個別送信を許可"
       : allowlistOk
         ? `${allowedRecipientCount}名だけにサーバー側で制限`
         : allowlistDatabaseOk
@@ -84,6 +83,6 @@ export async function getLaunchReadiness(): Promise<{ state: ReadinessState; che
   });
 
   const blockers = [...launchBlockers({ allowedRecipientCount }), ...checks.filter((check) => !check.ok).map((check) => `${check.label}: ${check.note}`)];
-  const state: ReadinessState = env.MOCK_LINE_API ? "INTERNAL TEST ONLY" : blockers.length ? "BLOCKED" : "READY FOR CONTROLLED LAUNCH";
+  const state: ReadinessState = env.MOCK_LINE_API ? "INTERNAL TEST ONLY" : blockers.length ? "BLOCKED" : env.LINE_RECIPIENT_MODE === "all_followers" ? "LIVE" : "READY FOR CONTROLLED LAUNCH";
   return { state, checks, blockers: [...new Set(blockers)] };
 }

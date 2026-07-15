@@ -15,9 +15,10 @@ import { createOpaquePostbackToken, verifyOpaquePostbackToken } from "@/lib/mile
 import { SupabaseInboxStore } from "@/lib/inbox/store-supabase";
 import { sendInboxTextMessage } from "@/lib/inbox/send-service";
 import type { MessageRecord } from "@/lib/webhook/store";
-import { followSurveyClientRequestId, parseSurveyPostbackData, selectRichMenuRule, surveyCompletionClientRequestId, surveyPostbackData, surveyQuestionClientRequestId, surveyResponseKey, type RichMenuRuleCandidate } from "@/lib/minimum-launch/domain";
+import { followSurveyClientRequestId, parseSurveyPostbackData, selectRichMenuRule, surveyCompletionClientRequestId, surveyGreetingClientRequestId, surveyPostbackData, surveyQuestionClientRequestId, surveyResponseKey, surveyRichMenuJobKey, surveyRichMenuRunAt, type RichMenuRuleCandidate } from "@/lib/minimum-launch/domain";
 import { validateRichMenuImage } from "@/lib/minimum-launch/rich-menu-image";
 import { scaleRichMenuLayout, type RichMenuActionInput } from "@/lib/minimum-launch/rich-menu-layouts";
+import { buildSurveyCompletionMessage, buildSurveyGreetingMessage, buildSurveyQuestionMessage, type LineFlexMessage } from "@/lib/minimum-launch/survey-flex-message";
 import { assertPerUserRichMenuPath } from "@/lib/milestone3/rich-menu";
 
 type Row = Record<string, unknown>;
@@ -98,9 +99,13 @@ async function recipientIsAllowed(client: SupabaseClient, organizationId: string
 export async function listLiveContacts(client: SupabaseClient, organizationId: string): Promise<Row[]> {
   const { data, error } = await client.from("contacts").select("id, line_user_id, display_name, friend_status, last_message_at").eq("organization_id", organizationId).neq("friend_status", "blocked").order("last_message_at", { ascending: false, nullsFirst: false }).limit(500);
   if (error) throw new Error("送信可能な顧客を取得できませんでした。");
+  const contactRows = data || [];
+  if (getServerEnv().LINE_RECIPIENT_MODE === "all_followers") {
+    return contactRows.map((value) => ({ id: row(value).id, displayName: row(value).display_name || "名称未取得", friendStatus: row(value).friend_status, lastMessageAt: row(value).last_message_at }));
+  }
   const hashes = await getEffectiveControlledRecipientHashes(client, organizationId);
   if (hashes.length !== 1) return [];
-  return (data || [])
+  return contactRows
     .filter((value) => hashes.includes(hashLineUserId(String(row(value).line_user_id))))
     .map((value) => ({ id: row(value).id, displayName: row(value).display_name || "名称未取得", friendStatus: row(value).friend_status, lastMessageAt: row(value).last_message_at }));
 }
@@ -223,20 +228,20 @@ async function runTagAddedAutomation(input: { client: SupabaseClient; organizati
 
 type QuickReplyOption = { id: string; label: string; token: string };
 
-async function pushQuickReply(lineUserId: string, text: string, options: QuickReplyOption[], retryKey: string, sessionId: string): Promise<{ accepted: boolean; status: number; lineRequestId: string | null; lineAcceptedRequestId: string | null }> {
+async function pushSurveyFlexMessage(lineUserId: string, message: LineFlexMessage, retryKey: string): Promise<{ accepted: boolean; status: number; lineRequestId: string | null; lineAcceptedRequestId: string | null }> {
   const token = getServerEnv().LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) throw new Error("LINE_CHANNEL_ACCESS_TOKENが設定されていません。");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
-    const response = await fetch("https://api.line.me/v2/bot/message/push", { method: "POST", redirect: "error", signal: controller.signal, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Line-Retry-Key": retryKey }, body: JSON.stringify({ to: lineUserId, messages: [{ type: "text", text, quickReply: { items: options.map((option) => ({ type: "action", action: { type: "postback", label: option.label, data: surveyPostbackData(sessionId, option.token), displayText: option.label } })) } }] }) });
+    const response = await fetch("https://api.line.me/v2/bot/message/push", { method: "POST", redirect: "error", signal: controller.signal, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Line-Retry-Key": retryKey }, body: JSON.stringify({ to: lineUserId, messages: [message] }) });
     return { accepted: response.status === 200 || response.status === 409, status: response.status, lineRequestId: response.headers.get("x-line-request-id"), lineAcceptedRequestId: response.headers.get("x-line-accepted-request-id") };
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function sendQuickReplyMessage(input: { client: SupabaseClient; organizationId: string; contactId: string; profileId: string; text: string; options: QuickReplyOption[]; clientRequestId: string; sessionId: string; gate: "manual" | "automation" }): Promise<MessageRecord> {
+async function sendSurveyFlexMessage(input: { client: SupabaseClient; organizationId: string; contactId: string; profileId: string; textContent: string; message: LineFlexMessage; clientRequestId: string; gate: "manual" | "automation" }): Promise<MessageRecord> {
   assertLaunchAction(input.gate === "automation" ? "LINE_AUTOMATION_SEND_ENABLED" : "LINE_MANUAL_SEND_ENABLED");
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
   if (String(contact.friend_status) === "blocked") throw new Error("ブロック中の顧客には送信できません。");
@@ -245,12 +250,31 @@ async function sendQuickReplyMessage(input: { client: SupabaseClient; organizati
   const conversation = await store.ensureConversationForContact(input.organizationId, input.contactId, new Date().toISOString());
   const existing = await store.findOutboundByClientRequest(input.organizationId, input.clientRequestId);
   if (existing?.status === "accepted" || existing?.status === "sending") return existing;
-  const created = existing ? { message: existing } : await store.createOutboundMessage({ organizationId: input.organizationId, conversationId: conversation.id, contactId: input.contactId, textContent: input.text, clientRequestId: input.clientRequestId, retryKey: randomUUID(), sentByProfileId: input.profileId });
+  const created = existing ? { message: existing } : await store.createOutboundMessage({ organizationId: input.organizationId, conversationId: conversation.id, contactId: input.contactId, textContent: input.textContent, clientRequestId: input.clientRequestId, retryKey: randomUUID(), sentByProfileId: input.profileId });
   const claimed = await store.claimOutboundMessage(input.organizationId, created.message.id, input.profileId);
-  const result = await pushQuickReply(String(contact.line_user_id), input.text, input.options, String(claimed.retryKey), input.sessionId);
+  const result = await pushSurveyFlexMessage(String(contact.line_user_id), input.message, String(claimed.retryKey));
   await store.recordOutboundAttempt({ organizationId: input.organizationId, messageId: claimed.id, attemptNumber: claimed.attemptCount, httpStatus: result.status, lineRequestId: result.lineRequestId, lineAcceptedRequestId: result.lineAcceptedRequestId, errorClass: result.accepted ? null : "line_rejected", errorMessageSafe: result.accepted ? null : "アンケート送信がLINE APIに拒否されました。" });
   if (!result.accepted) return store.updateOutboundMessage(input.organizationId, claimed.id, { status: result.status >= 500 ? "retryable_failed" : "permanently_failed", lineRequestId: result.lineRequestId, lineAcceptedRequestId: result.lineAcceptedRequestId, errorClass: "line_rejected", errorCode: String(result.status), errorMessageSafe: "アンケート送信がLINE APIに拒否されました。", failedAt: new Date().toISOString() });
   return store.updateOutboundMessage(input.organizationId, claimed.id, { status: "accepted", lineRequestId: result.lineRequestId, lineAcceptedRequestId: result.lineAcceptedRequestId, acceptedAt: new Date().toISOString() });
+}
+
+async function sendSurveyQuestionMessage(input: { client: SupabaseClient; organizationId: string; contactId: string; profileId: string; text: string; options: QuickReplyOption[]; clientRequestId: string; sessionId: string; gate: "manual" | "automation"; questionNumber: number; questionTotal: number }): Promise<MessageRecord> {
+  return sendSurveyFlexMessage({
+    client: input.client,
+    organizationId: input.organizationId,
+    contactId: input.contactId,
+    profileId: input.profileId,
+    textContent: input.text,
+    clientRequestId: input.clientRequestId,
+    gate: input.gate,
+    message: buildSurveyQuestionMessage({
+      accountName: getServerEnv().LINE_EXPECTED_DISPLAY_NAME,
+      title: input.text,
+      questionNumber: input.questionNumber,
+      questionTotal: input.questionTotal,
+      answers: input.options.map((option) => ({ label: option.label, data: surveyPostbackData(input.sessionId, option.token) }))
+    })
+  });
 }
 
 type SurveyOptionInput = { key?: string; label: string; tagId?: string };
@@ -280,7 +304,10 @@ function surveyPublic(survey: Row, entries: Array<{ question: Row; options: Row[
     name: survey.name,
     status: survey.status,
     sendOnFollow: survey.send_on_follow === true,
+    greetingMessage: typeof settings.greetingMessage === "string" ? settings.greetingMessage : "",
     completionMessage: typeof settings.completionMessage === "string" ? settings.completionMessage : "回答ありがとうございました。",
+    postSurveyRichMenuId: typeof settings.postSurveyRichMenuId === "string" ? settings.postSurveyRichMenuId : null,
+    richMenuFallbackMinutes: typeof settings.richMenuFallbackMinutes === "number" ? settings.richMenuFallbackMinutes : 30,
     question: questions[0] || null,
     questions
   };
@@ -319,18 +346,26 @@ export async function listLiveSurveys(client: SupabaseClient, organizationId: st
   return result;
 }
 
-export async function createLiveSurvey(input: { client: SupabaseClient; organizationId: string; profileId: string; name: string; questionTitle?: string; options?: SurveyOptionInput[]; questions?: SurveyQuestionInput[]; completionMessage?: string; sendOnFollow?: boolean }): Promise<Row> {
+export async function createLiveSurvey(input: { client: SupabaseClient; organizationId: string; profileId: string; name: string; questionTitle?: string; options?: SurveyOptionInput[]; questions?: SurveyQuestionInput[]; greetingMessage?: string; completionMessage?: string; postSurveyRichMenuId?: string; richMenuFallbackMinutes?: number; sendOnFollow?: boolean }): Promise<Row> {
   const name = input.name.trim();
   const questions = normalizeSurveyQuestions(input);
+  const greetingMessage = input.greetingMessage?.trim() || "";
   const completionMessage = input.completionMessage?.trim() || "回答ありがとうございました。";
+  const postSurveyRichMenuId = input.postSurveyRichMenuId?.trim() || null;
+  const richMenuFallbackMinutes = Math.min(Math.max(Math.round(input.richMenuFallbackMinutes ?? 30), 1), 1_440);
   if (!name || name.length > 150) throw new Error("アンケート名を確認してください。");
+  if (greetingMessage.length > 500) throw new Error("友だち追加時の挨拶は500文字以内にしてください。");
   if (completionMessage.length > 300) throw new Error("完了メッセージは300文字以内にしてください。");
   const tagIds = [...new Set(questions.flatMap((question) => question.options.map((option) => option.tagId).filter((tagId): tagId is string => Boolean(tagId))))];
   if (tagIds.length) {
     const { data: tags, error: tagError } = await input.client.from("tags").select("id").eq("organization_id", input.organizationId).eq("is_active", true).in("id", tagIds);
     if (tagError || (tags || []).length !== tagIds.length) throw new Error("選択肢に指定したタグが見つかりません。");
   }
-  const { data: survey, error: surveyError } = await input.client.from("surveys").insert({ organization_id: input.organizationId, name, status: "active", allow_multiple_responses: false, settings_json: { completionMessage }, created_by_profile_id: input.profileId }).select("*").single();
+  if (postSurveyRichMenuId) {
+    const { data: menu, error: menuError } = await input.client.from("rich_menus").select("id, line_rich_menu_id").eq("organization_id", input.organizationId).eq("id", postSurveyRichMenuId).eq("status", "active").maybeSingle();
+    if (menuError || !menu || !row(menu).line_rich_menu_id) throw new Error("アンケート完了後に表示する有効なリッチメニューが見つかりません。");
+  }
+  const { data: survey, error: surveyError } = await input.client.from("surveys").insert({ organization_id: input.organizationId, name, status: "active", allow_multiple_responses: false, settings_json: { greetingMessage, completionMessage, postSurveyRichMenuId, richMenuFallbackMinutes }, created_by_profile_id: input.profileId }).select("*").single();
   if (surveyError || !survey) throw new Error("アンケートを作成できませんでした。同名アンケートがないか確認してください。");
   try {
     const questionRecords = questions.map((question, index) => ({ organization_id: input.organizationId, survey_id: survey.id, question_key: question.key, title: question.title, question_type: "single_choice", is_required: true, sort_order: index }));
@@ -353,10 +388,68 @@ export async function createLiveSurvey(input: { client: SupabaseClient; organiza
   }
 }
 
+export async function updateLiveSurveyExperience(input: { client: SupabaseClient; organizationId: string; surveyId: string; greetingMessage?: string; completionMessage?: string; postSurveyRichMenuId?: string | null; richMenuFallbackMinutes?: number }): Promise<Row> {
+  const greetingMessage = input.greetingMessage?.trim() || "";
+  const completionMessage = input.completionMessage?.trim() || "回答ありがとうございました。";
+  const postSurveyRichMenuId = input.postSurveyRichMenuId?.trim() || null;
+  const richMenuFallbackMinutes = Math.min(Math.max(Math.round(input.richMenuFallbackMinutes ?? 30), 1), 1_440);
+  if (greetingMessage.length > 500) throw new Error("友だち追加時の挨拶は500文字以内にしてください。");
+  if (completionMessage.length > 300) throw new Error("完了メッセージは300文字以内にしてください。");
+  const existing = await input.client.from("surveys").select("id, settings_json").eq("organization_id", input.organizationId).eq("id", input.surveyId).maybeSingle();
+  if (existing.error || !existing.data) throw new Error("アンケートが見つかりません。");
+  if (postSurveyRichMenuId) {
+    const menu = await input.client.from("rich_menus").select("id, line_rich_menu_id").eq("organization_id", input.organizationId).eq("id", postSurveyRichMenuId).eq("status", "active").maybeSingle();
+    if (menu.error || !menu.data || !row(menu.data).line_rich_menu_id) throw new Error("アンケート後に表示する有効なリッチメニューが見つかりません。");
+  }
+  const settings = { ...row(existing.data.settings_json), greetingMessage, completionMessage, postSurveyRichMenuId, richMenuFallbackMinutes };
+  const updated = await input.client.from("surveys").update({ settings_json: settings, updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("id", input.surveyId).select("*").single();
+  if (updated.error || !updated.data) throw new Error("アンケートの配信体験設定を保存できませんでした。");
+  return row(updated.data);
+}
+
 export async function setLiveFollowSurvey(client: SupabaseClient, organizationId: string, surveyId: string | null): Promise<string | null> {
   const { data, error } = await client.rpc("minimum_set_follow_survey", { target_organization_id: organizationId, target_survey_id: surveyId });
   if (error) throw new Error(error.code === "23503" ? "有効なアンケートが見つかりません。" : "友だち追加時アンケートを更新できませんでした。");
   return typeof data === "string" ? data : null;
+}
+
+async function sendSurveyGreeting(input: { client: SupabaseClient; organizationId: string; contactId: string; profileId: string; greeting: string; questionTotal: number; clientRequestId: string }): Promise<void> {
+  const greeting = input.greeting.trim();
+  if (!greeting) return;
+  const sent = await sendSurveyFlexMessage({
+    client: input.client,
+    organizationId: input.organizationId,
+    contactId: input.contactId,
+    profileId: input.profileId,
+    textContent: greeting,
+    clientRequestId: input.clientRequestId,
+    gate: "automation",
+    message: buildSurveyGreetingMessage({ accountName: getServerEnv().LINE_EXPECTED_DISPLAY_NAME, greeting, questionTotal: input.questionTotal })
+  });
+  if (sent.status !== "accepted") throw new Error(sent.errorMessageSafe || "友だち追加時の挨拶がLINE APIに受け付けられませんでした。");
+}
+
+async function scheduleSurveyRichMenuFallback(input: { client: SupabaseClient; organizationId: string; contactId: string; sessionId: string; richMenuId: string | null; delayMinutes: number }): Promise<void> {
+  if (!input.richMenuId) return;
+  const runAt = surveyRichMenuRunAt(new Date(), input.delayMinutes);
+  const { error } = await input.client.from("scheduled_jobs").upsert({
+    organization_id: input.organizationId,
+    job_type: "survey_rich_menu_fallback",
+    resource_type: "survey_session",
+    resource_id: input.sessionId,
+    contact_id: input.contactId,
+    run_at: runAt,
+    status: "pending",
+    max_attempts: 5,
+    idempotency_key: surveyRichMenuJobKey(input.sessionId),
+    payload_json: { richMenuId: input.richMenuId },
+    updated_at: new Date().toISOString()
+  }, { onConflict: "organization_id,idempotency_key", ignoreDuplicates: true });
+  if (error) throw new Error("アンケート未完了時のリッチメニュー表示を予約できませんでした。");
+}
+
+async function finishSurveyRichMenuFallback(client: SupabaseClient, organizationId: string, sessionId: string): Promise<void> {
+  await client.from("scheduled_jobs").update({ status: "succeeded", completed_at: new Date().toISOString(), lease_owner: null, lease_expires_at: null, updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("idempotency_key", surveyRichMenuJobKey(sessionId)).in("status", ["pending", "retry_wait", "leased", "running"]);
 }
 
 function surveyContinuationGate(): "manual" | "automation" {
@@ -366,12 +459,25 @@ function surveyContinuationGate(): "manual" | "automation" {
 async function sendSurveyCompletion(input: { client: SupabaseClient; organizationId: string; contactId: string; survey: Row; sessionId: string }): Promise<void> {
   const settings = row(input.survey.settings_json);
   const text = typeof settings.completionMessage === "string" ? settings.completionMessage.trim() : "回答ありがとうございました。";
-  if (!text) return;
+  const richMenuId = typeof settings.postSurveyRichMenuId === "string" ? settings.postSurveyRichMenuId : null;
   const profileId = await systemProfileId(input.client, input.organizationId);
-  const store = new SupabaseInboxStore(input.client, input.organizationId);
-  const conversation = await store.ensureConversationForContact(input.organizationId, input.contactId, new Date().toISOString());
-  const sent = await sendInboxTextMessage({ store, organizationId: input.organizationId, profileId, role: "owner", gate: surveyContinuationGate(), conversationId: conversation.id, text, clientRequestId: surveyCompletionClientRequestId(input.sessionId) });
-  if (sent.message.status !== "accepted") throw new Error(sent.message.errorMessageSafe || "アンケート完了メッセージがLINE APIに受け付けられませんでした。");
+  if (text) {
+    const sent = await sendSurveyFlexMessage({
+      client: input.client,
+      organizationId: input.organizationId,
+      contactId: input.contactId,
+      profileId,
+      textContent: text,
+      clientRequestId: surveyCompletionClientRequestId(input.sessionId),
+      gate: surveyContinuationGate(),
+      message: buildSurveyCompletionMessage({ accountName: getServerEnv().LINE_EXPECTED_DISPLAY_NAME, message: text, richMenuLinked: Boolean(richMenuId) })
+    });
+    if (sent.status !== "accepted") throw new Error(sent.errorMessageSafe || "アンケート完了メッセージがLINE APIに受け付けられませんでした。");
+  }
+  if (richMenuId) {
+    await linkLiveRichMenu({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, richMenuId, sourceType: "survey" });
+    await finishSurveyRichMenuFallback(input.client, input.organizationId, input.sessionId);
+  }
 }
 
 export async function startLiveSurvey(input: { client: SupabaseClient; organizationId: string; surveyId: string; contactId?: string; profileId: string; gate?: "manual" | "automation"; clientRequestId?: string }): Promise<MessageRecord> {
@@ -381,32 +487,44 @@ export async function startLiveSurvey(input: { client: SupabaseClient; organizat
   await assertControlledRecipient(input.client, input.organizationId, String(contact.line_user_id));
   const { data: survey, error: surveyError } = await input.client.from("surveys").select("*").eq("organization_id", input.organizationId).eq("id", input.surveyId).eq("status", "active").single();
   if (surveyError || !survey) throw new Error("有効なアンケートが見つかりません。");
-  const { data: question, error: questionError } = await input.client.from("survey_questions").select("*").eq("organization_id", input.organizationId).eq("survey_id", input.surveyId).order("sort_order").limit(1).single();
-  if (questionError || !question) throw new Error("アンケート質問が見つかりません。");
+  const settings = row(survey.settings_json);
+  const richMenuId = typeof settings.postSurveyRichMenuId === "string" ? settings.postSurveyRichMenuId : null;
+  const fallbackMinutes = typeof settings.richMenuFallbackMinutes === "number" ? Math.min(Math.max(Math.round(settings.richMenuFallbackMinutes), 1), 1_440) : 30;
+  const { data: questions, error: questionError } = await input.client.from("survey_questions").select("*").eq("organization_id", input.organizationId).eq("survey_id", input.surveyId).order("sort_order");
+  const question = questions?.[0];
+  if (questionError || !question || !questions?.length) throw new Error("アンケート質問が見つかりません。");
   const { data: options, error: optionError } = await input.client.from("survey_options").select("id, label, postback_token").eq("organization_id", input.organizationId).eq("question_id", question.id).eq("is_active", true).order("sort_order");
   if (optionError || !options?.length) throw new Error("アンケート選択肢が見つかりません。");
-  await input.client.from("survey_sessions").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("survey_id", input.surveyId).eq("contact_id", contactId).eq("status", "active");
+  const { data: cancelledSessions } = await input.client.from("survey_sessions").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("survey_id", input.surveyId).eq("contact_id", contactId).eq("status", "active").select("id");
+  const cancelledSessionIds = (cancelledSessions || []).map((value) => String(row(value).id));
+  if (cancelledSessionIds.length) await input.client.from("scheduled_jobs").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("job_type", "survey_rich_menu_fallback").in("resource_id", cancelledSessionIds).in("status", ["pending", "retry_wait"]);
   const { data: session, error: sessionError } = await input.client.from("survey_sessions").insert({ organization_id: input.organizationId, survey_id: input.surveyId, contact_id: contactId, status: "active", current_question_id: question.id, expires_at: new Date(Date.now() + getServerEnv().SURVEY_DEFAULT_SESSION_TTL_HOURS * 60 * 60 * 1000).toISOString() }).select("id").single();
   if (sessionError || !session) throw new Error("アンケートセッションを作成できませんでした。");
   try {
-    const message = await sendQuickReplyMessage({ client: input.client, organizationId: input.organizationId, contactId, profileId: input.profileId, text: String(question.title), options: options.map((option) => ({ id: String(option.id), label: String(option.label), token: String(option.postback_token) })), clientRequestId: input.clientRequestId || surveyQuestionClientRequestId(String(session.id), String(question.id)), sessionId: String(session.id), gate: input.gate || "manual" });
+    await scheduleSurveyRichMenuFallback({ client: input.client, organizationId: input.organizationId, contactId, sessionId: String(session.id), richMenuId, delayMinutes: fallbackMinutes });
+    const message = await sendSurveyQuestionMessage({ client: input.client, organizationId: input.organizationId, contactId, profileId: input.profileId, text: String(question.title), options: options.map((option) => ({ id: String(option.id), label: String(option.label), token: String(option.postback_token) })), clientRequestId: input.clientRequestId || surveyQuestionClientRequestId(String(session.id), String(question.id)), sessionId: String(session.id), gate: input.gate || "manual", questionNumber: 1, questionTotal: questions.length });
     if (message.status !== "accepted") throw new Error(message.errorMessageSafe || "アンケートがLINE APIに受け付けられませんでした。");
     return message;
   } catch (error) {
     await input.client.from("survey_sessions").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("id", session.id);
+    await input.client.from("scheduled_jobs").update({ status: "cancelled", updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("idempotency_key", surveyRichMenuJobKey(String(session.id))).in("status", ["pending", "retry_wait"]);
     throw error;
   }
 }
 
 export async function sendFollowSurveyIfConfigured(input: { client: SupabaseClient; organizationId: string; contactId: string; webhookEventId: string }): Promise<"sent" | "not_configured" | "disabled" | "recipient_not_allowed"> {
   if (!isLaunchFlagEnabled("LINE_AUTOMATION_SEND_ENABLED")) return "disabled";
-  const { data: survey, error } = await input.client.from("surveys").select("id").eq("organization_id", input.organizationId).eq("status", "active").eq("send_on_follow", true).maybeSingle();
+  const { data: survey, error } = await input.client.from("surveys").select("id, settings_json").eq("organization_id", input.organizationId).eq("status", "active").eq("send_on_follow", true).maybeSingle();
   if (error) throw new Error("友だち追加時アンケートを取得できませんでした。");
   if (!survey) return "not_configured";
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
   if (!await recipientIsAllowed(input.client, input.organizationId, String(contact.line_user_id))) return "recipient_not_allowed";
   const profileId = await systemProfileId(input.client, input.organizationId);
   const surveyId = String(row(survey).id);
+  const settings = row(row(survey).settings_json);
+  const greeting = typeof settings.greetingMessage === "string" ? settings.greetingMessage : "";
+  const { count: questionTotal } = await input.client.from("survey_questions").select("id", { count: "exact", head: true }).eq("organization_id", input.organizationId).eq("survey_id", surveyId);
+  await sendSurveyGreeting({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, profileId, greeting, questionTotal: questionTotal || 1, clientRequestId: surveyGreetingClientRequestId(input.webhookEventId, surveyId, input.contactId) });
   await startLiveSurvey({
     client: input.client,
     organizationId: input.organizationId,
@@ -496,12 +614,14 @@ export async function handleLiveSurveyPostback(input: { client: SupabaseClient; 
       const advanced = await input.client.from("survey_sessions").update({ current_question_id: nextQuestionId, last_interaction_at: now, updated_at: now }).eq("organization_id", input.organizationId).eq("id", sessionRow.id).eq("status", "active").eq("current_question_id", questionId);
       if (advanced.error) throw new Error("アンケートの次の質問へ進めませんでした。");
     }
-    const { data: nextQuestion, error: nextQuestionError } = await input.client.from("survey_questions").select("*").eq("organization_id", input.organizationId).eq("survey_id", String(row(survey).id)).eq("id", nextQuestionId).single();
-    if (nextQuestionError || !nextQuestion) throw new Error("次のアンケート質問が見つかりません。");
+    const { data: surveyQuestions, error: nextQuestionError } = await input.client.from("survey_questions").select("*").eq("organization_id", input.organizationId).eq("survey_id", String(row(survey).id)).order("sort_order");
+    const nextQuestionIndex = (surveyQuestions || []).findIndex((item) => String(row(item).id) === nextQuestionId);
+    const nextQuestion = nextQuestionIndex >= 0 ? surveyQuestions?.[nextQuestionIndex] : null;
+    if (nextQuestionError || !nextQuestion || !surveyQuestions?.length) throw new Error("次のアンケート質問が見つかりません。");
     const { data: nextOptions, error: nextOptionError } = await input.client.from("survey_options").select("id, label, postback_token").eq("organization_id", input.organizationId).eq("question_id", nextQuestionId).eq("is_active", true).order("sort_order");
     if (nextOptionError || !nextOptions?.length) throw new Error("次のアンケート選択肢が見つかりません。");
     const profileId = await systemProfileId(input.client, input.organizationId);
-    const message = await sendQuickReplyMessage({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, profileId, text: String(nextQuestion.title), options: nextOptions.map((option) => ({ id: String(option.id), label: String(option.label), token: String(option.postback_token) })), clientRequestId: surveyQuestionClientRequestId(String(sessionRow.id), nextQuestionId), sessionId: String(sessionRow.id), gate: surveyContinuationGate() });
+    const message = await sendSurveyQuestionMessage({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, profileId, text: String(nextQuestion.title), options: nextOptions.map((option) => ({ id: String(option.id), label: String(option.label), token: String(option.postback_token) })), clientRequestId: surveyQuestionClientRequestId(String(sessionRow.id), nextQuestionId), sessionId: String(sessionRow.id), gate: surveyContinuationGate(), questionNumber: nextQuestionIndex + 1, questionTotal: surveyQuestions.length });
     if (message.status !== "accepted") throw new Error(message.errorMessageSafe || "次のアンケート質問がLINE APIに受け付けられませんでした。");
     return { handled: true, duplicate, tagId, nextQuestionId, completed: false };
   }
@@ -658,7 +778,7 @@ async function restoreLineRichMenu(lineUserId: string, previous: string | null):
   else await lineRequest(`/v2/bot/user/${encodeURIComponent(lineUserId)}/richmenu`, { method: "DELETE" });
 }
 
-export async function linkLiveRichMenu(input: { client: SupabaseClient; organizationId: string; contactId: string; richMenuId: string }): Promise<{ lineRichMenuId: string; previousRichMenuId: string | null; unchanged: boolean }> {
+export async function linkLiveRichMenu(input: { client: SupabaseClient; organizationId: string; contactId: string; richMenuId: string; sourceType?: "tag" | "survey" }): Promise<{ lineRichMenuId: string; previousRichMenuId: string | null; unchanged: boolean }> {
   assertLaunchAction("LINE_RICH_MENU_MUTATION_ENABLED");
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
   if (String(contact.friend_status) === "blocked") throw new Error("ブロック中の顧客にはリッチメニューを設定できません。");
@@ -673,7 +793,7 @@ export async function linkLiveRichMenu(input: { client: SupabaseClient; organiza
     return { lineRichMenuId: targetLineRichMenuId, previousRichMenuId: previous, unchanged: true };
   }
   await lineRequest(`/v2/bot/user/${encodeURIComponent(String(contact.line_user_id))}/richmenu/${encodeURIComponent(targetLineRichMenuId)}`, { method: "POST" });
-  const assignment = await input.client.from("rich_menu_assignments").upsert({ organization_id: input.organizationId, contact_id: input.contactId, rich_menu_id: input.richMenuId, source_type: "tag", source_id: previous, status: "synced", line_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: "organization_id,contact_id" });
+  const assignment = await input.client.from("rich_menu_assignments").upsert({ organization_id: input.organizationId, contact_id: input.contactId, rich_menu_id: input.richMenuId, source_type: input.sourceType || "tag", source_id: previous, status: "synced", line_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: "organization_id,contact_id" });
   if (assignment.error) {
     await restoreLineRichMenu(String(contact.line_user_id), current).catch(() => undefined);
     throw new Error("リッチメニューの紐付けを保存できませんでした。");
