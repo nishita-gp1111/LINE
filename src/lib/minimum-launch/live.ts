@@ -228,14 +228,33 @@ async function runTagAddedAutomation(input: { client: SupabaseClient; organizati
 
 type QuickReplyOption = { id: string; label: string; token: string };
 
-async function pushSurveyFlexMessage(lineUserId: string, message: LineFlexMessage, retryKey: string): Promise<{ accepted: boolean; status: number; lineRequestId: string | null; lineAcceptedRequestId: string | null }> {
+function safeLineApiError(body: unknown): string {
+  const parsed = row(body);
+  const summary = typeof parsed.message === "string" ? parsed.message : "アンケート送信がLINE APIに拒否されました。";
+  const details = Array.isArray(parsed.details)
+    ? parsed.details.slice(0, 5).map((detail) => {
+      const item = row(detail);
+      const property = typeof item.property === "string" ? item.property : "request";
+      const message = typeof item.message === "string" ? item.message : "invalid";
+      return `${property}: ${message}`;
+    })
+    : [];
+  return [summary, ...details].join(" / ").slice(0, 500);
+}
+
+async function pushSurveyFlexMessage(lineUserId: string, message: LineFlexMessage, retryKey: string): Promise<{ accepted: boolean; status: number; lineRequestId: string | null; lineAcceptedRequestId: string | null; errorMessageSafe: string | null }> {
   const token = getServerEnv().LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) throw new Error("LINE_CHANNEL_ACCESS_TOKENが設定されていません。");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
     const response = await fetch("https://api.line.me/v2/bot/message/push", { method: "POST", redirect: "error", signal: controller.signal, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Line-Retry-Key": retryKey }, body: JSON.stringify({ to: lineUserId, messages: [message] }) });
-    return { accepted: response.status === 200 || response.status === 409, status: response.status, lineRequestId: response.headers.get("x-line-request-id"), lineAcceptedRequestId: response.headers.get("x-line-accepted-request-id") };
+    const accepted = response.status === 200 || response.status === 409;
+    let responseBody: unknown = null;
+    if (!accepted && response.headers.get("content-type")?.includes("json")) {
+      try { responseBody = await response.json(); } catch { responseBody = null; }
+    }
+    return { accepted, status: response.status, lineRequestId: response.headers.get("x-line-request-id"), lineAcceptedRequestId: response.headers.get("x-line-accepted-request-id"), errorMessageSafe: accepted ? null : safeLineApiError(responseBody) };
   } finally {
     clearTimeout(timeout);
   }
@@ -253,8 +272,8 @@ async function sendSurveyFlexMessage(input: { client: SupabaseClient; organizati
   const created = existing ? { message: existing } : await store.createOutboundMessage({ organizationId: input.organizationId, conversationId: conversation.id, contactId: input.contactId, textContent: input.textContent, clientRequestId: input.clientRequestId, retryKey: randomUUID(), sentByProfileId: input.profileId });
   const claimed = await store.claimOutboundMessage(input.organizationId, created.message.id, input.profileId);
   const result = await pushSurveyFlexMessage(String(contact.line_user_id), input.message, String(claimed.retryKey));
-  await store.recordOutboundAttempt({ organizationId: input.organizationId, messageId: claimed.id, attemptNumber: claimed.attemptCount, httpStatus: result.status, lineRequestId: result.lineRequestId, lineAcceptedRequestId: result.lineAcceptedRequestId, errorClass: result.accepted ? null : "line_rejected", errorMessageSafe: result.accepted ? null : "アンケート送信がLINE APIに拒否されました。" });
-  if (!result.accepted) return store.updateOutboundMessage(input.organizationId, claimed.id, { status: result.status >= 500 ? "retryable_failed" : "permanently_failed", lineRequestId: result.lineRequestId, lineAcceptedRequestId: result.lineAcceptedRequestId, errorClass: "line_rejected", errorCode: String(result.status), errorMessageSafe: "アンケート送信がLINE APIに拒否されました。", failedAt: new Date().toISOString() });
+  await store.recordOutboundAttempt({ organizationId: input.organizationId, messageId: claimed.id, attemptNumber: claimed.attemptCount, httpStatus: result.status, lineRequestId: result.lineRequestId, lineAcceptedRequestId: result.lineAcceptedRequestId, errorClass: result.accepted ? null : "line_rejected", errorMessageSafe: result.errorMessageSafe });
+  if (!result.accepted) return store.updateOutboundMessage(input.organizationId, claimed.id, { status: result.status >= 500 ? "retryable_failed" : "permanently_failed", lineRequestId: result.lineRequestId, lineAcceptedRequestId: result.lineAcceptedRequestId, errorClass: "line_rejected", errorCode: String(result.status), errorMessageSafe: result.errorMessageSafe || "アンケート送信がLINE APIに拒否されました。", failedAt: new Date().toISOString() });
   return store.updateOutboundMessage(input.organizationId, claimed.id, { status: "accepted", lineRequestId: result.lineRequestId, lineAcceptedRequestId: result.lineAcceptedRequestId, acceptedAt: new Date().toISOString() });
 }
 
