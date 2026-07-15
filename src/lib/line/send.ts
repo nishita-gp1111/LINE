@@ -132,10 +132,19 @@ export class MockLineMulticastClient implements LineMulticastClient {
 export class LiveLineMulticastClient implements LineMulticastClient {
   constructor(private readonly accessToken: string) {}
   async multicast(input: LineMulticastInput): Promise<LineMulticastResult> {
-    const response = await fetch("https://api.line.me/v2/bot/message/multicast", { method: "POST", redirect: "error", headers: { Authorization: `Bearer ${this.accessToken}`, "Content-Type": "application/json", "X-Line-Retry-Key": input.retryKey }, body: JSON.stringify({ to: input.lineUserIds, messages: input.messages }) });
-    const lineRequestId = response.headers.get("x-line-request-id");
-    if (response.status === 200 || response.status === 409) return { accepted: true, retryable: false, httpStatus: response.status, lineRequestId };
-    return { accepted: false, retryable: response.status === 429 || response.status >= 500, httpStatus: response.status, lineRequestId, safeMessage: response.status === 429 ? "LINE quota/rate limitです。" : "LINE multicastが拒否されました。" };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const response = await fetch("https://api.line.me/v2/bot/message/multicast", { method: "POST", redirect: "error", headers: { Authorization: `Bearer ${this.accessToken}`, "Content-Type": "application/json", "X-Line-Retry-Key": input.retryKey }, body: JSON.stringify({ to: input.lineUserIds, messages: input.messages }), signal: controller.signal });
+      const lineRequestId = response.headers.get("x-line-request-id");
+      if (response.status === 200 || response.status === 409) return { accepted: true, retryable: false, httpStatus: response.status, lineRequestId };
+      return { accepted: false, retryable: response.status === 429 || response.status >= 500, httpStatus: response.status, lineRequestId, safeMessage: response.status === 429 ? "LINE quota/rate limitです。" : "LINE multicastが拒否されました。" };
+    } catch (error) {
+      const timedOut = error instanceof DOMException && error.name === "AbortError";
+      return { accepted: false, retryable: true, httpStatus: null, lineRequestId: null, safeMessage: timedOut ? "LINE multicastがタイムアウトしました。" : "LINE multicastへ接続できませんでした。" };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }
 

@@ -21,14 +21,14 @@ function parseActions(form: FormData): RichMenuActionInput[] {
     return parsed.map((value) => {
       if (!value || typeof value !== "object") throw new Error("ボタンの動作設定を確認してください。");
       const action = value as { type?: unknown; value?: unknown };
-      if (action.type !== "uri" && action.type !== "message") throw new Error("ボタンの動作を確認してください。");
+      if (action.type !== "uri" && action.type !== "message" && action.type !== "openKeyboard") throw new Error("ボタンの動作を確認してください。");
       if (typeof action.value !== "string") throw new Error("ボタンの入力内容を確認してください。");
       return { type: action.type, value: action.value };
     });
   }
 
   const actionType = String(form.get("actionType") || "");
-  if (actionType !== "uri" && actionType !== "message") throw new Error("リッチメニューのアクションを確認してください。");
+  if (actionType !== "uri" && actionType !== "message" && actionType !== "openKeyboard") throw new Error("リッチメニューのアクションを確認してください。");
   return [{ type: actionType, value: String(form.get("actionValue") || "") }];
 }
 

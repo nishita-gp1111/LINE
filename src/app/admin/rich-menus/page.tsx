@@ -31,6 +31,7 @@ function makeActions(count: number, current: RichMenuActionInput[] = []): RichMe
 
 function actionError(action: RichMenuActionInput): string | null {
   const value = action.value.trim();
+  if (action.type === "openKeyboard") return value.length <= 300 ? null : "入力欄へ入れる文章は300文字以内にしてください。";
   if (!value) return "動作を入力してください。";
   if (action.type === "message") return value.length <= 300 ? null : "送信メッセージは300文字以内にしてください。";
   try {
@@ -221,14 +222,15 @@ export default function RichMenusPage() {
             </div>
             <div className="mt-4 rounded-xl border border-line bg-paper/35 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2"><p className="font-black">エリア {selectedArea + 1} の動作</p><span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-ink/50">設定済み {configuredCount} / {layout.areas.length}</span></div>
-              <div className="mt-4 grid grid-cols-2 gap-2 rounded-lg bg-white p-1">
+              <div className="mt-4 grid grid-cols-3 gap-2 rounded-lg bg-white p-1">
                 <button type="button" onClick={() => updateSelectedAction({ type: "uri", value: "" })} className={`focus-ring rounded-md px-3 py-2 text-sm font-bold ${selectedAction.type === "uri" ? "bg-moss text-white" : "text-ink/55"}`}>Webページを開く</button>
                 <button type="button" onClick={() => updateSelectedAction({ type: "message", value: "" })} className={`focus-ring rounded-md px-3 py-2 text-sm font-bold ${selectedAction.type === "message" ? "bg-moss text-white" : "text-ink/55"}`}>メッセージを送る</button>
+                <button type="button" onClick={() => updateSelectedAction({ type: "openKeyboard", value: "" })} className={`focus-ring rounded-md px-3 py-2 text-sm font-bold ${selectedAction.type === "openKeyboard" ? "bg-moss text-white" : "text-ink/55"}`}>入力欄を開く</button>
               </div>
-              <label className="mt-4 grid gap-1.5 text-xs font-black text-ink/65">{selectedAction.type === "uri" ? "開くURL" : "タップ時に送るメッセージ"}
-                {selectedAction.type === "uri" ? <input value={selectedAction.value} onChange={(event) => updateSelectedAction({ value: event.target.value })} maxLength={1_000} placeholder="https://example.com" inputMode="url" className="focus-ring rounded-lg border border-line bg-white px-3 py-2.5 text-sm font-normal text-ink" /> : <textarea value={selectedAction.value} onChange={(event) => updateSelectedAction({ value: event.target.value })} maxLength={300} rows={3} placeholder="例：詳しいメニューを見せて" className="focus-ring resize-y rounded-lg border border-line bg-white px-3 py-2.5 text-sm font-normal text-ink" />}
+              <label className="mt-4 grid gap-1.5 text-xs font-black text-ink/65">{selectedAction.type === "uri" ? "開くURL" : selectedAction.type === "message" ? "タップ時に送るメッセージ" : "入力欄へ最初に入れる文章（任意）"}
+                {selectedAction.type === "uri" ? <input value={selectedAction.value} onChange={(event) => updateSelectedAction({ value: event.target.value })} maxLength={1_000} placeholder="https://example.com" inputMode="url" className="focus-ring rounded-lg border border-line bg-white px-3 py-2.5 text-sm font-normal text-ink" /> : <textarea value={selectedAction.value} onChange={(event) => updateSelectedAction({ value: event.target.value })} maxLength={300} rows={3} placeholder={selectedAction.type === "openKeyboard" ? "空欄なら、何も入力せずにキーボードだけを開きます" : "例：詳しいメニューを見せて"} className="focus-ring resize-y rounded-lg border border-line bg-white px-3 py-2.5 text-sm font-normal text-ink" />}
               </label>
-              <p className={`mt-2 text-xs ${selectedAction.value.trim() && actionError(selectedAction) ? "font-bold text-red-600" : "text-ink/45"}`}>{selectedAction.value.trim() ? actionError(selectedAction) || "このエリアの設定は完了です。" : selectedAction.type === "uri" ? "タップするとLINE内ブラウザでこのURLを開きます。" : "タップすると、この文言がユーザーから送信されます。"}</p>
+              <p className={`mt-2 text-xs ${selectedAction.value.trim() && actionError(selectedAction) ? "font-bold text-red-600" : "text-ink/45"}`}>{selectedAction.type === "openKeyboard" ? "タップするとLINEの入力欄とキーボードを開きます。文章は自動送信されません。" : selectedAction.value.trim() ? actionError(selectedAction) || "このエリアの設定は完了です。" : selectedAction.type === "uri" ? "タップするとLINE内ブラウザでこのURLを開きます。" : "タップすると、この文言がユーザーから送信されます。"}</p>
             </div>
           </div>
         </section>
