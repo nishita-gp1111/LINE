@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { assertPerUserRichMenuPath, assertRichMenuMutation, validateRichMenuDefinition } from "@/lib/milestone3/rich-menu";
-import { RICH_MENU_LAYOUTS, scaleRichMenuLayout } from "@/lib/minimum-launch/rich-menu-layouts";
+import { RICH_MENU_LAYOUTS, RICH_MENU_OPENS_BY_DEFAULT, scaleRichMenuLayout } from "@/lib/minimum-launch/rich-menu-layouts";
 import { buildFriendlyRichMenuSvg, GP_FRIENDLY_RICH_MENU_PRESET } from "@/lib/minimum-launch/rich-menu-preset";
 
 describe("Milestone 3E rich menu", () => {
+  it("opens newly linked menus by default", () => {
+    expect(RICH_MENU_OPENS_BY_DEFAULT).toBe(true);
+  });
   const definition = { width: 2500, height: 1686, chatBarText: "メニュー", areas: [{ x: 0, y: 0, width: 1250, height: 843, action: { type: "uri", uri: "https://example.com" } }] };
   it("validates bounds and HTTPS actions", () => {
     expect(validateRichMenuDefinition(definition).areas).toHaveLength(1);

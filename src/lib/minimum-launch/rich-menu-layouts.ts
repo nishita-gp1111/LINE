@@ -3,6 +3,8 @@ export type RichMenuActionInput = {
   value: string;
 };
 
+export const RICH_MENU_OPENS_BY_DEFAULT = true;
+
 export type RichMenuLayoutArea = {
   x: number;
   y: number;

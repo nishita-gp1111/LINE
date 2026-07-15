@@ -3,7 +3,7 @@ import { getAuthenticatedUser } from "@/lib/auth/server";
 import { canAdminister, getInboxAuthContext } from "@/lib/inbox/auth";
 import { getServerEnv } from "@/lib/env/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createLiveRichMenu } from "@/lib/minimum-launch/live";
+import { createLiveRichMenu, repairLiveRichMenuDisplay } from "@/lib/minimum-launch/live";
 import { getRichMenuLayout, type RichMenuActionInput } from "@/lib/minimum-launch/rich-menu-layouts";
 
 export const runtime = "nodejs";
@@ -63,5 +63,26 @@ export async function POST(request: Request) {
     return reply({ menu }, 201);
   } catch (error) {
     return reply({ error: error instanceof Error ? error.message : "rich_menu_create_failed" }, 400);
+  }
+}
+
+export async function PATCH(request: Request) {
+  if (!await getAuthenticatedUser()) return reply({ error: "unauthorized" }, 401);
+  if (getServerEnv().MOCK_LINE_API) return reply({ error: "Live modeで利用してください。" }, 400);
+  const auth = await getInboxAuthContext();
+  const client = createSupabaseAdminClient();
+  if (!auth || !client) return reply({ error: "database_not_configured" }, 503);
+  if (!canAdminister(auth.role)) return reply({ error: "管理者権限が必要です。" }, 403);
+  try {
+    const body = await request.json() as { menuId?: unknown };
+    if (typeof body.menuId !== "string" || !body.menuId) return reply({ error: "リッチメニューを選択してください。" }, 400);
+    const repair = await repairLiveRichMenuDisplay({
+      client,
+      organizationId: auth.organizationId,
+      richMenuId: body.menuId
+    });
+    return reply({ repair });
+  } catch (error) {
+    return reply({ error: error instanceof Error ? error.message : "rich_menu_repair_failed" }, 400);
   }
 }
