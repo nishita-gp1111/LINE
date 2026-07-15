@@ -26,7 +26,7 @@ export async function getLaunchReadiness(): Promise<{ state: ReadinessState; che
     flags.LINE_MANUAL_SEND_ENABLED &&
     flags.LINE_AUTOMATION_SEND_ENABLED &&
     flags.LINE_RICH_MENU_MUTATION_ENABLED &&
-    !flags.LINE_BULK_SEND_ENABLED &&
+    flags.LINE_BULK_SEND_ENABLED &&
     !flags.LINE_SCHEDULED_SEND_ENABLED &&
     !flags.LINE_AUTO_REPLY_ENABLED &&
     !flags.LINE_MEDIA_SEND_ENABLED
@@ -35,7 +35,7 @@ export async function getLaunchReadiness(): Promise<{ state: ReadinessState; che
     key: "flags",
     label: "Minimum Production feature flags",
     ok: minimumFlagsOk,
-    note: env.MOCK_LINE_API ? "Mock mode" : minimumFlagsOk ? "個別送信・automation・ユーザー別rich menuだけ有効" : "必須flagまたは禁止flagを確認してください"
+    note: env.MOCK_LINE_API ? "Mock mode" : minimumFlagsOk ? "個別送信・タグ配信・automation・ユーザー別rich menuを有効化" : "必須flagまたは禁止flagを確認してください"
   });
 
   let allowedRecipientCount = configuredRecipientCount(env.LINE_TEST_USER_IDS, env.LINE_TEST_USER_HASHES);

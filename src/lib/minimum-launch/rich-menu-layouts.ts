@@ -1,5 +1,5 @@
 export type RichMenuActionInput = {
-  type: "uri" | "message";
+  type: "uri" | "message" | "openKeyboard";
   value: string;
 };
 

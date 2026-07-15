@@ -714,6 +714,16 @@ function richMenuAction(action: RichMenuActionInput): Row {
     if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("リッチメニューURLはhttpまたはhttpsにしてください。");
     return { type: "uri", label: "開く", uri: url.toString() };
   }
+  if (action.type === "openKeyboard") {
+    if (value.length > 300) throw new Error("リッチメニューの入力文は300文字以内にしてください。");
+    return {
+      type: "postback",
+      label: "相談する",
+      data: "minimum_launch_action=chat_consultation",
+      inputOption: "openKeyboard",
+      ...(value ? { fillInText: value } : {})
+    };
+  }
   if (!value || value.length > 300) throw new Error("リッチメニューの送信文は1〜300文字にしてください。");
   return { type: "message", label: "送信", text: value };
 }

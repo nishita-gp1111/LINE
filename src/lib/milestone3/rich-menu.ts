@@ -3,7 +3,12 @@ import { z } from "zod";
 export const richMenuActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("uri"), uri: z.string().url() }),
   z.object({ type: z.literal("message"), text: z.string().trim().min(1).max(5000) }),
-  z.object({ type: z.literal("postback"), data: z.string().trim().min(1).max(300) })
+  z.object({
+    type: z.literal("postback"),
+    data: z.string().trim().min(1).max(300),
+    inputOption: z.enum(["closeRichMenu", "openRichMenu", "openKeyboard", "openVoice"]).optional(),
+    fillInText: z.string().max(300).optional()
+  })
 ]);
 export const richMenuAreaSchema = z.object({ x: z.number().int().nonnegative(), y: z.number().int().nonnegative(), width: z.number().int().positive(), height: z.number().int().positive(), action: richMenuActionSchema });
 export const richMenuDefinitionSchema = z.object({ width: z.union([z.literal(2500), z.literal(1200)]), height: z.union([z.literal(1686), z.literal(843)]), chatBarText: z.string().trim().min(1).max(14), selected: z.boolean().default(false), areas: z.array(richMenuAreaSchema).min(1).max(20) });

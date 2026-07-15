@@ -92,7 +92,7 @@ export function launchBlockers(options: { allowedRecipientCount?: number } = {})
     if (!env.LINE_MANUAL_SEND_ENABLED) blockers.push("LINE_MANUAL_SEND_ENABLEDをtrueにしてください。");
     if (!env.LINE_AUTOMATION_SEND_ENABLED) blockers.push("LINE_AUTOMATION_SEND_ENABLEDをtrueにしてください。");
     if (!env.LINE_RICH_MENU_MUTATION_ENABLED) blockers.push("LINE_RICH_MENU_MUTATION_ENABLEDをtrueにしてください。");
-    if (env.LINE_BULK_SEND_ENABLED) blockers.push("LINE_BULK_SEND_ENABLEDをfalseにしてください。");
+    if (!env.LINE_BULK_SEND_ENABLED) blockers.push("タグ配信を利用するにはLINE_BULK_SEND_ENABLEDをtrueにしてください。");
     if (env.LINE_SCHEDULED_SEND_ENABLED) blockers.push("LINE_SCHEDULED_SEND_ENABLEDをfalseにしてください。");
     if (env.LINE_AUTO_REPLY_ENABLED) blockers.push("LINE_AUTO_REPLY_ENABLEDをfalseにしてください。");
     if (env.LINE_MEDIA_SEND_ENABLED) blockers.push("LINE_MEDIA_SEND_ENABLEDをfalseにしてください。");

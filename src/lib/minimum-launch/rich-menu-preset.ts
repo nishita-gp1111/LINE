@@ -4,14 +4,14 @@ export const FRIENDLY_RICH_MENU_WIDTH = 1_536;
 export const FRIENDLY_RICH_MENU_HEIGHT = 1_024;
 
 export const GP_FRIENDLY_RICH_MENU_PRESET = {
-  name: "GP PRモニター 基本メニュー（フレンドリー）",
+  name: "GP PRモニター 基本メニュー（入力対応）",
   tagName: "基本メニュー表示",
   chatBarText: "メニュー",
   layoutId: "hero-3-friendly" as const,
   applyExisting: false,
   actions: [
     { type: "uri", value: "https://timerex.net/s/s.nishita_b272/a237d2aa" },
-    { type: "message", value: "相談したいです" },
+    { type: "openKeyboard", value: "" },
     { type: "uri", value: "https://www.growth-path.jp/" }
   ] satisfies RichMenuActionInput[]
 };

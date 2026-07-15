@@ -10,6 +10,10 @@ describe("Milestone 3E rich menu", () => {
     expect(() => validateRichMenuDefinition({ ...definition, areas: [{ ...definition.areas[0], x: 2400 }] })).toThrow();
     expect(() => validateRichMenuDefinition({ ...definition, areas: [{ ...definition.areas[0], action: { type: "uri", uri: "http://example.com" } }] })).toThrow();
   });
+  it("allows a postback action that opens the keyboard without sending text", () => {
+    const keyboard = { ...definition, areas: [{ ...definition.areas[0], action: { type: "postback", data: "minimum_launch_action=chat_consultation", inputOption: "openKeyboard" } }] };
+    expect(validateRichMenuDefinition(keyboard).areas[0].action).toMatchObject({ type: "postback", inputOption: "openKeyboard" });
+  });
   it("requires explicit owner confirmation before global default changes", () => {
     expect(() => assertRichMenuMutation({ mock: false, enabled: false, role: "owner", isDefaultChange: true, confirmation: "SET_DEFAULT_RICH_MENU" })).toThrow();
     expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "admin", isDefaultChange: true, confirmation: "SET_DEFAULT_RICH_MENU" })).toThrow();
@@ -54,7 +58,7 @@ describe("Milestone 3E rich menu", () => {
     expect(GP_FRIENDLY_RICH_MENU_PRESET.applyExisting).toBe(false);
     expect(GP_FRIENDLY_RICH_MENU_PRESET.actions).toEqual([
       { type: "uri", value: "https://timerex.net/s/s.nishita_b272/a237d2aa" },
-      { type: "message", value: "相談したいです" },
+      { type: "openKeyboard", value: "" },
       { type: "uri", value: "https://www.growth-path.jp/" }
     ]);
     const svg = buildFriendlyRichMenuSvg();

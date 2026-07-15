@@ -31,7 +31,7 @@ export const GP_AFTER_SURVEY_PRESET = {
 「他のモニター案件について詳しく知りたい」
 
 など、気になることがありましたら、お気軽にご相談ください✨`,
-  richMenuName: "GP PRモニター 基本メニュー（フレンドリー）",
+  richMenuName: "GP PRモニター 基本メニュー（入力対応）",
   richMenuFallbackMinutes: 30,
   sendOnFollow: true,
   questions: [

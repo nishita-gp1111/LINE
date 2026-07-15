@@ -30,6 +30,12 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
     ]
   },
   {
+    label: "配信",
+    items: [
+      { href: "/admin/campaigns", label: "タグ配信", description: "複数タグで対象を絞る", icon: "✉" }
+    ]
+  },
+  {
     label: "設定",
     items: [
       { href: "/admin/settings/line", label: "LINE接続", description: "Webhook・接続確認", icon: "⚙" }
@@ -77,7 +83,7 @@ function Navigation({ pathname, compact = false }: { pathname: string; compact?:
   );
 }
 
-export function AdminShell({ userEmail, children }: { userEmail: string; children: ReactNode }) {
+export function AdminShell({ userEmail, recipientMode, children }: { userEmail: string; recipientMode: "controlled" | "all_followers"; children: ReactNode }) {
   const pathname = usePathname();
   const current = [homeItem, ...sections.flatMap((section) => section.items)].find((item) => active(pathname, item.href)) || homeItem;
 
@@ -91,8 +97,8 @@ export function AdminShell({ userEmail, children }: { userEmail: string; childre
         <div className="flex-1 overflow-y-auto px-3 py-5"><Navigation pathname={pathname} /></div>
         <div className="border-t border-white/10 p-4">
           <div className="rounded-xl bg-white/5 p-3">
-            <div className="flex items-center gap-2 text-xs font-black"><span className="size-2 rounded-full bg-emerald-400" />Sho本人限定モード</div>
-            <p className="mt-1 text-[10px] leading-4 text-white/45">一斉配信・予約配信・自動返信は停止中</p>
+            <div className="flex items-center gap-2 text-xs font-black"><span className="size-2 rounded-full bg-emerald-400" />{recipientMode === "all_followers" ? "本番運用モード" : "Sho本人限定モード"}</div>
+            <p className="mt-1 text-[10px] leading-4 text-white/45">{recipientMode === "all_followers" ? "タグ配信は対象確認と最終入力が必要" : "一斉配信・予約配信・自動返信は停止中"}</p>
           </div>
         </div>
       </aside>
