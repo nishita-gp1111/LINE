@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assertPerUserRichMenuPath, assertRichMenuMutation, validateRichMenuDefinition } from "@/lib/milestone3/rich-menu";
 import { RICH_MENU_LAYOUTS, scaleRichMenuLayout } from "@/lib/minimum-launch/rich-menu-layouts";
+import { buildFriendlyRichMenuSvg, GP_FRIENDLY_RICH_MENU_PRESET } from "@/lib/minimum-launch/rich-menu-preset";
 
 describe("Milestone 3E rich menu", () => {
   const definition = { width: 2500, height: 1686, chatBarText: "メニュー", areas: [{ x: 0, y: 0, width: 1250, height: 843, action: { type: "uri", uri: "https://example.com" } }] };
@@ -47,5 +48,20 @@ describe("Milestone 3E rich menu", () => {
       { x: 0, y: 593, width: 768, height: 431 },
       { x: 768, y: 593, width: 768, height: 431 }
     ]);
+  });
+  it("ships a friendly GP preset with the intended actions", () => {
+    expect(GP_FRIENDLY_RICH_MENU_PRESET.layoutId).toBe("hero-3-friendly");
+    expect(GP_FRIENDLY_RICH_MENU_PRESET.applyExisting).toBe(false);
+    expect(GP_FRIENDLY_RICH_MENU_PRESET.actions).toEqual([
+      { type: "uri", value: "https://timerex.net/s/s.nishita_b272/a237d2aa" },
+      { type: "message", value: "相談したいです" },
+      { type: "uri", value: "https://www.growth-path.jp/" }
+    ]);
+    const svg = buildFriendlyRichMenuSvg();
+    expect(svg).toContain('width="1536"');
+    expect(svg).toContain('height="1024"');
+    expect(svg).toContain("無料相談予約");
+    expect(svg).toContain("チャット相談");
+    expect(svg).toContain("会社情報");
   });
 });

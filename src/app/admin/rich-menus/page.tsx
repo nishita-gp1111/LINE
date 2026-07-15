@@ -10,6 +10,7 @@ import {
   type RichMenuLayout,
   type RichMenuLayoutId
 } from "@/lib/minimum-launch/rich-menu-layouts";
+import { createFriendlyRichMenuFile, GP_FRIENDLY_RICH_MENU_PRESET } from "@/lib/minimum-launch/rich-menu-preset";
 
 type Menu = {
   id: string;
@@ -111,6 +112,31 @@ export default function RichMenusPage() {
     setSelectedArea(0);
     setImage(null);
     setFileKey((value) => value + 1);
+  }
+
+  async function applyFriendlyPreset() {
+    setWorking(true);
+    setMessage("");
+    try {
+      const presetImage = await createFriendlyRichMenuFile();
+      const presetTag = tags.find((tag) => tag.name === GP_FRIENDLY_RICH_MENU_PRESET.tagName);
+      setForm({
+        name: GP_FRIENDLY_RICH_MENU_PRESET.name,
+        tagId: presetTag?.id ?? "",
+        chatBarText: GP_FRIENDLY_RICH_MENU_PRESET.chatBarText,
+        applyExisting: GP_FRIENDLY_RICH_MENU_PRESET.applyExisting
+      });
+      setLayoutId(GP_FRIENDLY_RICH_MENU_PRESET.layoutId);
+      setActions(GP_FRIENDLY_RICH_MENU_PRESET.actions.map((action) => ({ ...action })));
+      setSelectedArea(0);
+      setImage(presetImage);
+      setFileKey((value) => value + 1);
+      setMessage(presetTag ? "おすすめ設定を入力しました。プレビューを確認して作成してください。" : "画像とボタンを入力しました。「基本メニュー表示」タグを選んでください。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "おすすめデザインを生成できませんでした。");
+    } finally {
+      setWorking(false);
+    }
   }
 
   async function create() {
@@ -227,6 +253,8 @@ export default function RichMenusPage() {
               <input key={fileKey} type="file" accept="image/jpeg,image/png" onChange={(event) => setImage(event.target.files?.[0] || null)} className="focus-ring rounded-lg border border-dashed border-moss/40 bg-emerald-50/40 px-3 py-3 text-xs font-normal" />
               <span className="text-[11px] font-normal leading-relaxed text-ink/45">JPEG/PNG、1MB以下、幅800〜2500px・高さ250px以上・横長画像に対応。</span>
             </label>
+            <button type="button" onClick={() => void applyFriendlyPreset()} disabled={working} className="focus-ring mt-3 w-full rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-900 shadow-sm transition hover:bg-emerald-100 disabled:opacity-40">✨ GPおすすめデザインを使う</button>
+            <p className="mt-2 text-center text-[11px] leading-relaxed text-ink/45">明るい3ボタン画像・予約URL・チャット・会社情報をまとめて入力します。</p>
           </section>
 
           <section className="rounded-2xl border border-line bg-white p-5 shadow-sm sm:p-6">
