@@ -169,10 +169,10 @@ export default function SurveysPage() {
       const response = await fetch("/api/milestone3/interactive", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "survey_send", surveyId, contactId: targetContactId })
+        body: JSON.stringify({ action: "survey_send", surveyId, contactId: targetContactId, includeGreeting: true })
       });
       const data = await response.json() as { error?: string };
-      setMessage(data.error || "選択した顧客1名へ質問1を送信しました。回答後は次の質問が自動表示されます。");
+      setMessage(data.error || "選択した顧客1名へ挨拶と質問1を送信しました。回答後は次の質問が自動表示されます。");
     } finally {
       setWorking(false);
     }
@@ -365,7 +365,7 @@ export default function SurveysPage() {
                 <div className="grid gap-2 lg:min-w-72">
                   <select aria-label={`${survey.name}完了後のリッチメニュー`} value={survey.postSurveyRichMenuId || ""} onChange={(event) => void updateSurveyExperience(survey, { postSurveyRichMenuId: event.target.value || null })} disabled={working} className="focus-ring min-h-10 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-bold disabled:opacity-40"><option value="">完了後メニュー：設定なし</option>{menus.map((menu) => <option key={menu.id} value={menu.id}>完了後：{menu.name}</option>)}</select>
                   {survey.postSurveyRichMenuId ? <select aria-label={`${survey.name}未完了時のリッチメニュー表示時間`} value={survey.richMenuFallbackMinutes || 30} onChange={(event) => void updateSurveyExperience(survey, { richMenuFallbackMinutes: Number(event.target.value) })} disabled={working} className="focus-ring min-h-10 rounded-xl border border-violet-200 bg-white px-3 text-xs font-bold disabled:opacity-40"><option value={30}>未完了でも30分後に表示</option><option value={60}>未完了でも1時間後に表示</option><option value={180}>未完了でも3時間後に表示</option><option value={1440}>未完了でも24時間後に表示</option></select> : null}
-                  <div className="flex flex-wrap gap-2 lg:justify-end"><button type="button" onClick={() => void setFollowSurvey(survey.sendOnFollow ? null : survey.id)} disabled={working} className={`focus-ring rounded-xl border px-3 py-2.5 text-xs font-black disabled:opacity-40 ${survey.sendOnFollow ? "border-violet-200 bg-violet-50 text-violet-700" : "border-line bg-white text-ink/70"}`}>{survey.sendOnFollow ? "自動送信を解除" : "友だち追加時に送る"}</button><button type="button" onClick={() => void send(survey.id)} disabled={working || !targetContactId} className="focus-ring rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-35">選択顧客1名へ開始</button></div>
+                  <div className="flex flex-wrap gap-2 lg:justify-end"><button type="button" onClick={() => void setFollowSurvey(survey.sendOnFollow ? null : survey.id)} disabled={working} className={`focus-ring rounded-xl border px-3 py-2.5 text-xs font-black disabled:opacity-40 ${survey.sendOnFollow ? "border-violet-200 bg-violet-50 text-violet-700" : "border-line bg-white text-ink/70"}`}>{survey.sendOnFollow ? "自動送信を解除" : "友だち追加時に送る"}</button><button type="button" onClick={() => void send(survey.id)} disabled={working || !targetContactId} className="focus-ring rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-35">選択顧客1名へ体験送信</button></div>
                 </div>
               </article>;
             })}

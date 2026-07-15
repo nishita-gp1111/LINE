@@ -432,7 +432,7 @@ export async function setLiveFollowSurvey(client: SupabaseClient, organizationId
   return typeof data === "string" ? data : null;
 }
 
-async function sendSurveyGreeting(input: { client: SupabaseClient; organizationId: string; contactId: string; profileId: string; greeting: string; questionTotal: number; clientRequestId: string }): Promise<void> {
+async function sendSurveyGreeting(input: { client: SupabaseClient; organizationId: string; contactId: string; profileId: string; greeting: string; questionTotal: number; clientRequestId: string; gate?: "manual" | "automation" }): Promise<void> {
   const greeting = input.greeting.trim();
   if (!greeting) return;
   const sent = await sendSurveyFlexMessage({
@@ -442,7 +442,7 @@ async function sendSurveyGreeting(input: { client: SupabaseClient; organizationI
     profileId: input.profileId,
     textContent: greeting,
     clientRequestId: input.clientRequestId,
-    gate: "automation",
+    gate: input.gate || "automation",
     message: buildSurveyGreetingMessage({ accountName: getServerEnv().LINE_EXPECTED_DISPLAY_NAME, greeting, questionTotal: input.questionTotal })
   });
   if (sent.status !== "accepted") throw new Error(sent.errorMessageSafe || "友だち追加時の挨拶がLINE APIに受け付けられませんでした。");
@@ -499,7 +499,7 @@ async function sendSurveyCompletion(input: { client: SupabaseClient; organizatio
   }
 }
 
-export async function startLiveSurvey(input: { client: SupabaseClient; organizationId: string; surveyId: string; contactId?: string; profileId: string; gate?: "manual" | "automation"; clientRequestId?: string }): Promise<MessageRecord> {
+export async function startLiveSurvey(input: { client: SupabaseClient; organizationId: string; surveyId: string; contactId?: string; profileId: string; gate?: "manual" | "automation"; clientRequestId?: string; includeGreeting?: boolean }): Promise<MessageRecord> {
   assertLaunchAction(input.gate === "automation" ? "LINE_AUTOMATION_SEND_ENABLED" : "LINE_MANUAL_SEND_ENABLED");
   const contact = await resolveContact(input.client, input.organizationId, input.contactId);
   const contactId = String(contact.id);
@@ -521,6 +521,19 @@ export async function startLiveSurvey(input: { client: SupabaseClient; organizat
   if (sessionError || !session) throw new Error("アンケートセッションを作成できませんでした。");
   try {
     await scheduleSurveyRichMenuFallback({ client: input.client, organizationId: input.organizationId, contactId, sessionId: String(session.id), richMenuId, delayMinutes: fallbackMinutes });
+    if (input.includeGreeting) {
+      const greeting = typeof settings.greetingMessage === "string" ? settings.greetingMessage : "";
+      await sendSurveyGreeting({
+        client: input.client,
+        organizationId: input.organizationId,
+        contactId,
+        profileId: input.profileId,
+        greeting,
+        questionTotal: questions.length,
+        clientRequestId: surveyGreetingClientRequestId(`manual-${String(session.id)}`, input.surveyId, contactId),
+        gate: input.gate || "manual"
+      });
+    }
     const message = await sendSurveyQuestionMessage({ client: input.client, organizationId: input.organizationId, contactId, profileId: input.profileId, text: String(question.title), options: options.map((option) => ({ id: String(option.id), label: String(option.label), token: String(option.postback_token) })), clientRequestId: input.clientRequestId || surveyQuestionClientRequestId(String(session.id), String(question.id)), sessionId: String(session.id), gate: input.gate || "manual", questionNumber: 1, questionTotal: questions.length });
     if (message.status !== "accepted") throw new Error(message.errorMessageSafe || "アンケートがLINE APIに受け付けられませんでした。");
     return message;
