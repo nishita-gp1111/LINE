@@ -146,9 +146,8 @@ export function buildSurveyQuestionMessage(input: {
         spacing: "sm",
         paddingAll: "16px",
         backgroundColor: BRAND.paper,
-        separator: true,
-        separatorColor: BRAND.line,
         contents: [
+          { type: "separator", color: BRAND.line },
           ...buttons,
           { type: "text", text: current < total ? "回答すると次の質問へ進みます" : "回答するとアンケートは完了です", color: BRAND.muted, size: "xxs", align: "center", margin: "sm", wrap: true }
         ]

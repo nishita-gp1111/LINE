@@ -45,6 +45,7 @@ describe("customer-facing survey Flex Messages", () => {
     expect(message.altText).toBe("アンケート 1/2｜当窓口をどこで知りましたか？");
     expect(progress?.contents).toHaveLength(2);
     expect(buttons).toHaveLength(2);
+    expect(footer.contents?.[0]?.type).toBe("separator");
     expect(buttons[0]?.action).toEqual({
       type: "postback",
       label: "Web広告",
