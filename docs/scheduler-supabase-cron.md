@@ -1,8 +1,10 @@
 # Supabase Cron setup
 
-既定providerは`supabase_cron`です。本番URLとsecretはSQLへ直書きせず、人間がSupabase Vaultへ保存してください。
+既定providerは`supabase_cron`です。本番URLとsecretはSQLへ直書きせず、Supabase Vaultへ保存してください。
 
-1. Supabase Dashboardでpg_cron/pg_netを有効化し、Vault secretへ`CRON_SECRET`を登録する。
+Productionで`CRON_SECRET`が未設定の場合、アプリは`SUPABASE_SERVICE_ROLE_KEY`から用途分離したHMAC-SHA-256 credentialを生成します。Supabase Vaultへ保存するのはこの派生値だけで、service role keyそのものをCronのHTTP headerへ渡しません。`CRON_SECRET`を明示設定した場合は、従来どおりその値を優先します。
+
+1. Supabase Dashboardでpg_cron/pg_netを有効化し、Vault secretへ明示`CRON_SECRET`またはProduction service role keyから生成したCron専用派生値を登録する。
 2. [supabase/manual/scheduler.sql.example](../supabase/manual/scheduler.sql.example) のVault keyを環境に合わせて設定する。
 3. 1分ごとのPOSTを`/api/cron/dispatch`へ設定し、AuthorizationはVaultから取得する。
 4. `/api/cron/health`でheartbeatとstale thresholdを確認する。
