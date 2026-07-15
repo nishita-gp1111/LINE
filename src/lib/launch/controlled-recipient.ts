@@ -94,6 +94,7 @@ export async function evaluateControlledRecipient(
   return evaluateRecipientPolicy({
     appEnvironment: env.APP_ENV,
     mockLineApi: env.MOCK_LINE_API,
+    recipientMode: env.LINE_RECIPIENT_MODE,
     allowedLineUserIds: [],
     allowedLineUserHashes: hashes,
     lineUserId

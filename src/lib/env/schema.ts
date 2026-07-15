@@ -66,6 +66,7 @@ export const envSchema = z.object({
   LINE_MEDIA_SEND_ENABLED: booleanEnv(false),
   LINE_RICH_MENU_MUTATION_ENABLED: booleanEnv(false),
   LINE_TRACKING_ENABLED: booleanEnv(true),
+  LINE_RECIPIENT_MODE: z.enum(["controlled", "all_followers"]).default("controlled"),
   LINE_TEST_USER_IDS: idAllowlist,
   LINE_TEST_USER_HASHES: sha256Allowlist,
   LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED: booleanEnv(false),

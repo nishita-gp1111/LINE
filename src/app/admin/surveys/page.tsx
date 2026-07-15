@@ -6,9 +6,10 @@ import { useEffect, useMemo, useState } from "react";
 
 type Tag = { id: string; name: string };
 type Contact = { id: string; displayName: string; friendStatus: string };
+type RichMenu = { id: string; name: string; status: string };
 type SurveyOption = { id?: string; key: string; label: string; tagId: string | null };
 type SurveyQuestion = { id?: string; key?: string; title: string; options: SurveyOption[] };
-type Survey = { id: string; name: string; status: string; sendOnFollow: boolean; completionMessage?: string; question?: SurveyQuestion | null; questions?: SurveyQuestion[] };
+type Survey = { id: string; name: string; status: string; sendOnFollow: boolean; greetingMessage?: string; completionMessage?: string; postSurveyRichMenuId?: string | null; richMenuFallbackMinutes?: number; question?: SurveyQuestion | null; questions?: SurveyQuestion[] };
 type OptionForm = { key: string; label: string; tagId: string };
 type QuestionForm = { key: string; title: string; options: OptionForm[] };
 
@@ -24,6 +25,11 @@ function tagName(tags: Tag[], tagId: string | null): string {
   return tags.find((tag) => tag.id === tagId)?.name || "タグなし";
 }
 
+function richMenuName(menus: RichMenu[], menuId?: string | null): string {
+  if (!menuId) return "設定なし";
+  return menus.find((menu) => menu.id === menuId)?.name || "削除・停止済みメニュー";
+}
+
 function questionsOf(survey: Survey): SurveyQuestion[] {
   if (survey.questions?.length) return survey.questions;
   return survey.question ? [survey.question] : [];
@@ -33,8 +39,9 @@ export default function SurveysPage() {
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [menus, setMenus] = useState<RichMenu[]>([]);
   const [targetContactId, setTargetContactId] = useState("");
-  const [form, setForm] = useState({ name: "", sendOnFollow: false, completionMessage: "回答ありがとうございました。" });
+  const [form, setForm] = useState({ name: "", sendOnFollow: false, greetingMessage: "友だち追加ありがとうございます！\nかんたんなアンケートにご協力ください。", completionMessage: "ご回答ありがとうございました。内容を確認してご連絡します。", postSurveyRichMenuId: "", richMenuFallbackMinutes: 30 });
   const [questions, setQuestions] = useState<QuestionForm[]>(() => [makeQuestion(true)]);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [previewCompleted, setPreviewCompleted] = useState(false);
@@ -42,17 +49,20 @@ export default function SurveysPage() {
   const [working, setWorking] = useState(false);
 
   async function load() {
-    const [surveyResponse, tagResponse, contactResponse] = await Promise.all([
+    const [surveyResponse, tagResponse, contactResponse, menuResponse] = await Promise.all([
       fetch("/api/milestone3/interactive?resource=surveys"),
       fetch("/api/milestone3/foundation?resource=tags"),
-      fetch("/api/milestone3/interactive?resource=contacts")
+      fetch("/api/milestone3/interactive?resource=contacts"),
+      fetch("/api/milestone3/interactive?resource=menus")
     ]);
     const surveyData = await surveyResponse.json() as { surveys?: Survey[] };
     const tagData = await tagResponse.json() as { tags?: Tag[] };
     const contactData = await contactResponse.json() as { contacts?: Contact[] };
+    const menuData = await menuResponse.json() as { menus?: RichMenu[] };
     setSurveys(surveyData.surveys ?? []);
     setTags(tagData.tags ?? []);
     setContacts(contactData.contacts ?? []);
+    setMenus((menuData.menus ?? []).filter((menu) => menu.status === "active"));
     if (!targetContactId && contactData.contacts?.length === 1) setTargetContactId(contactData.contacts[0].id);
   }
 
@@ -61,7 +71,7 @@ export default function SurveysPage() {
   const totalOptions = useMemo(() => questions.reduce((sum, question) => sum + question.options.length, 0), [questions]);
   const mappedCount = useMemo(() => questions.reduce((sum, question) => sum + question.options.filter((option) => option.tagId).length, 0), [questions]);
   const previewQuestion = questions[Math.min(previewIndex, questions.length - 1)];
-  const createDisabled = working || !form.name.trim() || !form.completionMessage.trim() || questions.some((question) => !question.title.trim() || question.options.some((option) => !option.label.trim()));
+  const createDisabled = working || !form.name.trim() || !form.completionMessage.trim() || (form.sendOnFollow && !form.greetingMessage.trim()) || questions.some((question) => !question.title.trim() || question.options.some((option) => !option.label.trim()));
 
   function updateQuestion(questionKey: string, patch: Partial<QuestionForm>) {
     setQuestions((current) => current.map((question) => question.key === questionKey ? { ...question, ...patch } : question));
@@ -80,7 +90,7 @@ export default function SurveysPage() {
   }
 
   function resetForm() {
-    setForm({ name: "", sendOnFollow: false, completionMessage: "回答ありがとうございました。" });
+    setForm({ name: "", sendOnFollow: false, greetingMessage: "友だち追加ありがとうございます！\nかんたんなアンケートにご協力ください。", completionMessage: "ご回答ありがとうございました。内容を確認してご連絡します。", postSurveyRichMenuId: "", richMenuFallbackMinutes: 30 });
     setQuestions([makeQuestion(true)]);
     setPreviewIndex(0);
     setPreviewCompleted(false);
@@ -96,7 +106,10 @@ export default function SurveysPage() {
           action: "survey_create",
           name: form.name,
           sendOnFollow: form.sendOnFollow,
+          greetingMessage: form.greetingMessage,
           completionMessage: form.completionMessage,
+          postSurveyRichMenuId: form.postSurveyRichMenuId || undefined,
+          richMenuFallbackMinutes: form.richMenuFallbackMinutes,
           questions: questions.map((question, questionIndex) => ({
             key: `question_${questionIndex + 1}`,
             title: question.title,
@@ -151,6 +164,29 @@ export default function SurveysPage() {
     }
   }
 
+  async function updateSurveyExperience(survey: Survey, patch: Partial<Pick<Survey, "postSurveyRichMenuId" | "richMenuFallbackMinutes">>) {
+    setWorking(true); setMessage("");
+    try {
+      const response = await fetch("/api/milestone3/interactive", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "survey_experience_update",
+          surveyId: survey.id,
+          greetingMessage: survey.greetingMessage || "",
+          completionMessage: survey.completionMessage || "回答ありがとうございました。",
+          postSurveyRichMenuId: patch.postSurveyRichMenuId === undefined ? survey.postSurveyRichMenuId : patch.postSurveyRichMenuId,
+          richMenuFallbackMinutes: patch.richMenuFallbackMinutes ?? survey.richMenuFallbackMinutes ?? 30
+        })
+      });
+      const data = await response.json() as { error?: string };
+      setMessage(data.error || "アンケート完了後のリッチメニュー設定を保存しました。");
+      if (!data.error) await load();
+    } finally {
+      setWorking(false);
+    }
+  }
+
   function previewAnswer() {
     if (previewIndex < questions.length - 1) {
       setPreviewIndex((index) => index + 1);
@@ -172,16 +208,17 @@ export default function SurveysPage() {
           <Link href="/admin/tags" className="focus-ring rounded-xl border border-line bg-white px-4 py-2.5 text-xs font-black shadow-sm hover:bg-paper">先にタグを作成する →</Link>
         </header>
 
-        <section aria-label="アンケートシナリオの動作" className="mt-6 grid gap-2 sm:grid-cols-5">
+        <section aria-label="アンケートシナリオの動作" className="mt-6 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
           {[
-            ["1", "質問を表示", "LINEトークに送信"],
-            ["2", "回答をタップ", "文字入力は不要"],
-            ["3", "タグを付与", "回答ごとに即時"],
-            ["4", "次の質問へ", "自動で繰り返す"],
-            ["5", "回答完了", "お礼を表示"]
+            ["1", "挨拶を表示", "友だち追加直後"],
+            ["2", "質問を表示", "LINEカードで送信"],
+            ["3", "回答をタップ", "文字入力は不要"],
+            ["4", "タグを付与", "回答ごとに即時"],
+            ["5", "回答完了", "お礼を表示"],
+            ["6", "メニュー表示", "完了時／30分後"]
           ].map(([number, label, note], index) => (
             <div key={number} className="relative rounded-xl border border-line bg-white p-3 shadow-sm">
-              {index < 4 ? <span className="absolute -right-2 top-1/2 z-10 hidden -translate-y-1/2 text-lg text-emerald-400 sm:block">›</span> : null}
+              {index < 5 ? <span className="absolute -right-2 top-1/2 z-10 hidden -translate-y-1/2 text-lg text-emerald-400 xl:block">›</span> : null}
               <div className="flex items-center gap-2"><span className="grid size-7 place-items-center rounded-full bg-emerald-600 text-xs font-black text-white">{number}</span><p className="text-xs font-black">{label}</p></div>
               <p className="mt-1 pl-9 text-[10px] text-ink/40">{note}</p>
             </div>
@@ -197,9 +234,20 @@ export default function SurveysPage() {
               <h2 className="mt-1 text-lg font-black">質問を順番につなげる</h2>
             </div>
             <div className="grid gap-6 p-5 sm:p-6">
+              <label className="grid gap-1.5 text-xs font-black text-ink/65">管理用の名前<span className="font-normal text-ink/40">顧客には表示されません</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例：初回ヒアリング" maxLength={150} className="focus-ring min-h-11 rounded-xl border border-line px-3 text-sm font-normal" /></label>
+
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="grid gap-1.5 text-xs font-black text-ink/65">管理用の名前<span className="font-normal text-ink/40">顧客には表示されません</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例：初回ヒアリング" maxLength={150} className="focus-ring min-h-11 rounded-xl border border-line px-3 text-sm font-normal" /></label>
-                <label className="grid gap-1.5 text-xs font-black text-ink/65">最後に表示するメッセージ<span className="font-normal text-ink/40">全質問が終わった後に送信</span><input value={form.completionMessage} onChange={(event) => setForm({ ...form, completionMessage: event.target.value })} maxLength={300} className="focus-ring min-h-11 rounded-xl border border-line px-3 text-sm font-normal" /></label>
+                <label className="grid gap-1.5 text-xs font-black text-ink/65">友だち追加後の挨拶<span className="font-normal text-ink/40">CRMからアンケートの前にカード表示</span><textarea value={form.greetingMessage} onChange={(event) => setForm({ ...form, greetingMessage: event.target.value })} maxLength={500} rows={4} className="focus-ring resize-y rounded-xl border border-line px-3 py-3 text-sm font-normal leading-6" /></label>
+                <label className="grid gap-1.5 text-xs font-black text-ink/65">最後に表示するメッセージ<span className="font-normal text-ink/40">全質問が終わった後にカード表示</span><textarea value={form.completionMessage} onChange={(event) => setForm({ ...form, completionMessage: event.target.value })} maxLength={300} rows={4} className="focus-ring resize-y rounded-xl border border-line px-3 py-3 text-sm font-normal leading-6" /></label>
+              </div>
+
+              <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-4">
+                <div className="flex items-start gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-violet-600 text-white">▦</span><div><h3 className="text-sm font-black">アンケート後のリッチメニュー</h3><p className="mt-1 text-xs leading-5 text-ink/50">完了者には即時、未完了者にも開始から指定時間後にユーザー単位で表示します。全体デフォルトは変更しません。</p></div></div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px]">
+                  <label className="grid gap-1.5 text-xs font-black text-ink/65">表示するリッチメニュー<select value={form.postSurveyRichMenuId} onChange={(event) => setForm({ ...form, postSurveyRichMenuId: event.target.value })} className="focus-ring min-h-11 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold"><option value="">設定しない</option>{menus.map((menu) => <option key={menu.id} value={menu.id}>{menu.name}</option>)}</select></label>
+                  <label className="grid gap-1.5 text-xs font-black text-ink/65">未完了時の表示時間<select value={form.richMenuFallbackMinutes} onChange={(event) => setForm({ ...form, richMenuFallbackMinutes: Number(event.target.value) })} disabled={!form.postSurveyRichMenuId} className="focus-ring min-h-11 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold disabled:opacity-45"><option value={30}>30分後</option><option value={60}>1時間後</option><option value={180}>3時間後</option><option value={1440}>24時間後</option></select></label>
+                </div>
+                {!menus.length ? <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">有効なリッチメニューがありません。<Link href="/admin/rich-menus" className="ml-1 underline">先にリッチメニューを作成してください。</Link></p> : null}
               </div>
 
               <div>
@@ -280,9 +328,13 @@ export default function SurveysPage() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2"><h3 className="font-black">{survey.name}</h3><span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black text-emerald-700">{survey.status}</span><span className="rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-black text-sky-700">{surveyQuestions.length}問シナリオ</span>{survey.sendOnFollow ? <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[9px] font-black text-violet-700">友だち追加時に送信</span> : null}</div>
                   <div className="mt-3 grid gap-2">{surveyQuestions.map((question, questionIndex) => <div key={question.id || question.key || questionIndex} className="rounded-xl border border-line bg-[#fafcfb] p-3"><p className="text-xs font-black"><span className="mr-2 text-emerald-700">Q{questionIndex + 1}</span>{question.title}</p><div className="mt-2 flex flex-wrap gap-1.5">{question.options.map((option) => <span key={option.id || option.key} className="rounded-lg border border-line bg-white px-2 py-1 text-[9px]"><b>{option.label}</b><span className="mx-1 text-emerald-500">→</span><span className={option.tagId ? "font-black text-emerald-700" : "text-ink/35"}>{tagName(tags, option.tagId)}</span></span>)}</div></div>)}</div>
-                  <p className="mt-2 text-[10px] text-ink/40">完了時：{survey.completionMessage || "回答ありがとうございました。"}</p>
+                  <div className="mt-3 grid gap-1 text-[10px] text-ink/45"><p><b>挨拶：</b>{survey.greetingMessage || "設定なし"}</p><p><b>完了時：</b>{survey.completionMessage || "回答ありがとうございました。"}</p><p><b>リッチメニュー：</b>{richMenuName(menus, survey.postSurveyRichMenuId)}{survey.postSurveyRichMenuId ? `（完了時／未完了でも${survey.richMenuFallbackMinutes || 30}分後）` : ""}</p></div>
                 </div>
-                <div className="flex flex-wrap gap-2 lg:justify-end"><button type="button" onClick={() => void setFollowSurvey(survey.sendOnFollow ? null : survey.id)} disabled={working} className={`focus-ring rounded-xl border px-3 py-2.5 text-xs font-black disabled:opacity-40 ${survey.sendOnFollow ? "border-violet-200 bg-violet-50 text-violet-700" : "border-line bg-white text-ink/70"}`}>{survey.sendOnFollow ? "自動送信を解除" : "友だち追加時に送る"}</button><button type="button" onClick={() => void send(survey.id)} disabled={working || !targetContactId} className="focus-ring rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-35">選択顧客1名へ開始</button></div>
+                <div className="grid gap-2 lg:min-w-72">
+                  <select aria-label={`${survey.name}完了後のリッチメニュー`} value={survey.postSurveyRichMenuId || ""} onChange={(event) => void updateSurveyExperience(survey, { postSurveyRichMenuId: event.target.value || null })} disabled={working} className="focus-ring min-h-10 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-bold disabled:opacity-40"><option value="">完了後メニュー：設定なし</option>{menus.map((menu) => <option key={menu.id} value={menu.id}>完了後：{menu.name}</option>)}</select>
+                  {survey.postSurveyRichMenuId ? <select aria-label={`${survey.name}未完了時のリッチメニュー表示時間`} value={survey.richMenuFallbackMinutes || 30} onChange={(event) => void updateSurveyExperience(survey, { richMenuFallbackMinutes: Number(event.target.value) })} disabled={working} className="focus-ring min-h-10 rounded-xl border border-violet-200 bg-white px-3 text-xs font-bold disabled:opacity-40"><option value={30}>未完了でも30分後に表示</option><option value={60}>未完了でも1時間後に表示</option><option value={180}>未完了でも3時間後に表示</option><option value={1440}>未完了でも24時間後に表示</option></select> : null}
+                  <div className="flex flex-wrap gap-2 lg:justify-end"><button type="button" onClick={() => void setFollowSurvey(survey.sendOnFollow ? null : survey.id)} disabled={working} className={`focus-ring rounded-xl border px-3 py-2.5 text-xs font-black disabled:opacity-40 ${survey.sendOnFollow ? "border-violet-200 bg-violet-50 text-violet-700" : "border-line bg-white text-ink/70"}`}>{survey.sendOnFollow ? "自動送信を解除" : "友だち追加時に送る"}</button><button type="button" onClick={() => void send(survey.id)} disabled={working || !targetContactId} className="focus-ring rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white disabled:opacity-35">選択顧客1名へ開始</button></div>
+                </div>
               </article>;
             })}
             {!surveys.length ? <div className="grid min-h-48 place-items-center p-8 text-center"><div><p className="text-3xl">☑</p><p className="mt-3 text-sm font-bold text-ink/55">アンケートはまだありません</p><p className="mt-1 text-xs text-ink/35">質問を追加して、最初のアンケートシナリオを作成してください。</p></div></div> : null}

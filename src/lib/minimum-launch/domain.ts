@@ -14,12 +14,25 @@ export function followSurveyClientRequestId(webhookEventId: string, surveyId: st
   return `minimum-follow-survey:${webhookEventId}:${surveyId}:${contactId}`;
 }
 
+export function surveyGreetingClientRequestId(webhookEventId: string, surveyId: string, contactId: string): string {
+  return `minimum-survey-greeting:${webhookEventId}:${surveyId}:${contactId}`;
+}
+
 export function surveyQuestionClientRequestId(sessionId: string, questionId: string): string {
   return `minimum-survey-question:${sessionId}:${questionId}`;
 }
 
 export function surveyCompletionClientRequestId(sessionId: string): string {
   return `minimum-survey-complete:${sessionId}`;
+}
+
+export function surveyRichMenuJobKey(sessionId: string): string {
+  return `survey-rich-menu:${sessionId}`;
+}
+
+export function surveyRichMenuRunAt(startedAt: Date, delayMinutes: number): string {
+  const minutes = Math.min(Math.max(Math.round(delayMinutes), 1), 1_440);
+  return new Date(startedAt.getTime() + minutes * 60 * 1000).toISOString();
 }
 
 export function surveyPostbackData(sessionId: string, token: string): string {

@@ -49,8 +49,9 @@ export async function GET() {
       flags: launchFlagStatus(),
       recipientPolicy: {
         failClosed: !env.MOCK_LINE_API,
+        mode: env.LINE_RECIPIENT_MODE,
         allowedRecipientCount,
-        productionRequiresSingleRecipient: true
+        productionRequiresSingleRecipient: env.LINE_RECIPIENT_MODE === "controlled"
       },
       defaultRichMenuMutationAllowed: false,
       scheduler: publicLaunchStatus(),
