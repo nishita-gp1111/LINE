@@ -8,6 +8,7 @@ import {
   type ControlledEnrollmentResult
 } from "@/lib/launch/controlled-recipient";
 import { handleLiveSurveyPostback, sendFollowSurveyIfConfigured } from "@/lib/minimum-launch/live";
+import type { InboundEmailNotificationInput } from "@/lib/notifications/inbound-email";
 import type { ApplyContactInput, WebhookStore } from "@/lib/webhook/store";
 
 type ControlledRecipientEnrollment = (input: {
@@ -23,6 +24,7 @@ export type ProcessContext = {
   profileClient: LineProfileClient;
   minimumLaunchClient?: SupabaseClient;
   controlledRecipientEnrollment?: ControlledRecipientEnrollment;
+  onInboundMessage?: (input: InboundEmailNotificationInput) => void;
 };
 
 export type ProcessResult = "processed" | "ignored" | "duplicate";
@@ -146,6 +148,24 @@ export async function processWebhookEvent(
       if (inserted.inserted && inserted.message && store.ensureConversationForContact) {
         const conversation = await store.ensureConversationForContact(context.organizationId, contact.id, eventAt(event), inserted.message);
         if (store.incrementUnreadForInbound) await store.incrementUnreadForInbound(context.organizationId, conversation.id, inserted.message.id);
+        if (!enrollment.matched && context.onInboundMessage) {
+          try {
+            context.onInboundMessage({
+              organizationId: context.organizationId,
+              contactId: contact.id,
+              conversationId: conversation.id,
+              messageId: inserted.message.id,
+              displayName: contact.displayName,
+              messageType: inserted.message.messageType,
+              textContent: inserted.message.textContent,
+              receivedAt: inserted.message.lineEventTimestamp,
+              createdAt: inserted.message.createdAt
+            });
+          } catch {
+            // Email notification scheduling must never turn a valid LINE event into a webhook failure.
+            console.error("[inbound-email] notification scheduling failed");
+          }
+        }
       }
       if (enrollment.status === "enrolled" && context.minimumLaunchClient) {
         await sendFollowSurveyIfConfigured({

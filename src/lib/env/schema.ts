@@ -34,6 +34,22 @@ const emailAllowlist = z
       .filter(Boolean)
   );
 
+const emailRecipients = z
+  .string()
+  .default("")
+  .transform((value) =>
+    [...new Set(value
+      .split(",")
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean))]
+  )
+  .pipe(z.array(z.string().email()).max(50));
+
+const optionalEmail = z.preprocess(
+  (value) => (value === "" || value === undefined ? undefined : value),
+  z.string().email().optional()
+);
+
 const idAllowlist = z
   .string()
   .default("")
@@ -72,6 +88,15 @@ export const envSchema = z.object({
   LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED: booleanEnv(false),
   LINE_CONTROLLED_LAUNCH_ENROLLMENT_TOKEN_HASH: optionalSha256,
   ADMIN_EMAIL_ALLOWLIST: emailAllowlist,
+
+  INBOUND_EMAIL_NOTIFICATIONS_ENABLED: booleanEnv(false),
+  INBOUND_EMAIL_NOTIFICATION_RECIPIENTS: emailRecipients,
+  INBOUND_EMAIL_NOTIFICATION_FROM: optionalEmail,
+  INBOUND_EMAIL_NOTIFICATION_COOLDOWN_MINUTES: integerEnv(10).refine(
+    (value) => value <= 1440,
+    "Notification cooldown must be at most 1440 minutes"
+  ),
+  RESEND_API_KEY: optionalText,
 
   NEXT_PUBLIC_SUPABASE_URL: optionalUrl,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalText,
@@ -121,6 +146,37 @@ export const envSchema = z.object({
   SURVEY_MAX_QUESTIONS: integerEnv(50),
   SURVEY_MAX_QUICK_REPLY_OPTIONS: integerEnv(13),
   SURVEY_POSTBACK_TOKEN_SECRET: optionalText
+}).superRefine((env, context) => {
+  if (!env.INBOUND_EMAIL_NOTIFICATIONS_ENABLED) return;
+
+  if (env.INBOUND_EMAIL_NOTIFICATION_RECIPIENTS.length === 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["INBOUND_EMAIL_NOTIFICATION_RECIPIENTS"],
+      message: "At least one notification recipient is required when inbound email notifications are enabled"
+    });
+  }
+  if (!env.INBOUND_EMAIL_NOTIFICATION_FROM) {
+    context.addIssue({
+      code: "custom",
+      path: ["INBOUND_EMAIL_NOTIFICATION_FROM"],
+      message: "A verified sender address is required when inbound email notifications are enabled"
+    });
+  }
+  if (!env.RESEND_API_KEY) {
+    context.addIssue({
+      code: "custom",
+      path: ["RESEND_API_KEY"],
+      message: "RESEND_API_KEY is required when inbound email notifications are enabled"
+    });
+  }
+  if (!env.NEXT_PUBLIC_APP_URL) {
+    context.addIssue({
+      code: "custom",
+      path: ["NEXT_PUBLIC_APP_URL"],
+      message: "NEXT_PUBLIC_APP_URL is required when inbound email notifications are enabled"
+    });
+  }
 });
 
 export type AppEnv = z.output<typeof envSchema>;

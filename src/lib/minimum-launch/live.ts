@@ -17,7 +17,7 @@ import { sendInboxTextMessage } from "@/lib/inbox/send-service";
 import type { MessageRecord } from "@/lib/webhook/store";
 import { followSurveyClientRequestId, parseSurveyPostbackData, selectRichMenuRule, surveyCompletionClientRequestId, surveyGreetingClientRequestId, surveyPostbackData, surveyQuestionClientRequestId, surveyResponseKey, surveyRichMenuJobKey, surveyRichMenuRunAt, type RichMenuRuleCandidate } from "@/lib/minimum-launch/domain";
 import { validateRichMenuImage } from "@/lib/minimum-launch/rich-menu-image";
-import { scaleRichMenuLayout, type RichMenuActionInput } from "@/lib/minimum-launch/rich-menu-layouts";
+import { RICH_MENU_OPENS_BY_DEFAULT, scaleRichMenuLayout, type RichMenuActionInput } from "@/lib/minimum-launch/rich-menu-layouts";
 import { buildSurveyCompletionMessage, buildSurveyGreetingMessage, buildSurveyQuestionMessage, type LineFlexMessage } from "@/lib/minimum-launch/survey-flex-message";
 import { assertPerUserRichMenuPath } from "@/lib/milestone3/rich-menu";
 
@@ -52,6 +52,31 @@ async function lineRequest(path: string, init: RequestInit = {}, dataApi = false
     }
     if (!response.ok) throw new Error(`LINE API request failed (${response.status})`);
     return { status: response.status, body, headers: response.headers };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw new Error("LINE API request timed out");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function lineContentRequest(path: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+  assertPerUserRichMenuPath(path);
+  const token = getServerEnv().LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token) throw new Error("LINE_CHANNEL_ACCESS_TOKENが設定されていません。");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(`https://api-data.line.me${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      redirect: "error",
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`LINE rich menu image request failed (${response.status})`);
+    const contentType = response.headers.get("content-type")?.split(";")[0]?.trim() || "";
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    validateRichMenuImage(bytes, contentType);
+    return { bytes, contentType };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw new Error("LINE API request timed out");
     throw error;
@@ -741,7 +766,7 @@ export async function createLiveRichMenu(input: { client: SupabaseClient; organi
   if (input.actions.length !== bounds.length) throw new Error("レイアウト内のすべてのボタンを設定してください。");
   const definition = {
     size: { width: image.width, height: image.height },
-    selected: false,
+    selected: RICH_MENU_OPENS_BY_DEFAULT,
     name,
     chatBarText,
     areas: bounds.map((area, index) => ({ bounds: area, action: richMenuAction(input.actions[index]) }))
@@ -754,7 +779,7 @@ export async function createLiveRichMenu(input: { client: SupabaseClient; organi
   try {
     const body = input.imageBytes.buffer.slice(input.imageBytes.byteOffset, input.imageBytes.byteOffset + input.imageBytes.byteLength) as ArrayBuffer;
     await lineRequest(`/v2/bot/richmenu/${encodeURIComponent(lineId)}/content`, { method: "POST", headers: { "Content-Type": image.contentType }, body }, true);
-    const { data: menu, error } = await input.client.from("rich_menus").insert({ organization_id: input.organizationId, name, line_rich_menu_id: lineId, chat_bar_text: chatBarText, width: image.width, height: image.height, selected: false, definition_json: definition, status: "active", is_default: false, managed_by: "api", created_by_profile_id: input.profileId }).select("*").single();
+    const { data: menu, error } = await input.client.from("rich_menus").insert({ organization_id: input.organizationId, name, line_rich_menu_id: lineId, chat_bar_text: chatBarText, width: image.width, height: image.height, selected: RICH_MENU_OPENS_BY_DEFAULT, definition_json: definition, status: "active", is_default: false, managed_by: "api", created_by_profile_id: input.profileId }).select("*").single();
     if (error || !menu) throw new Error("リッチメニューをDBへ保存できませんでした。");
     const areaResult = await input.client.from("rich_menu_areas").insert(definition.areas.map((area, areaOrder) => ({ organization_id: input.organizationId, rich_menu_id: menu.id, area_order: areaOrder, ...area.bounds, action_type: area.action.type, action_config_json: area.action })));
     if (areaResult.error) throw new Error("リッチメニュー領域を保存できませんでした。");
@@ -794,9 +819,97 @@ export async function listLiveRichMenus(client: SupabaseClient, organizationId: 
     const menu = row(menuValue);
     const rule = row((rules.data || []).find((value) => String(row(value).rich_menu_id) === String(menu.id)));
     const { count } = await client.from("rich_menu_assignments").select("contact_id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("rich_menu_id", String(menu.id)).eq("status", "synced");
-    result.push({ ...menu, linkCount: count || 0, tagId: rule.tag_id || null, tagName: rule.tag_id ? tagNames.get(String(rule.tag_id)) || "削除済みタグ" : null });
+    result.push({ ...menu, opensByDefault: menu.selected === true && row(menu.definition_json).selected === true, linkCount: count || 0, tagId: rule.tag_id || null, tagName: rule.tag_id ? tagNames.get(String(rule.tag_id)) || "削除済みタグ" : null });
   }
   return result;
+}
+
+async function intendedRichMenuContactIds(client: SupabaseClient, organizationId: string, richMenuId: string): Promise<string[]> {
+  const ids = new Set<string>();
+  const [assignments, rules, surveys] = await Promise.all([
+    client.from("rich_menu_assignments").select("contact_id").eq("organization_id", organizationId).eq("rich_menu_id", richMenuId).neq("status", "removed"),
+    client.from("rich_menu_rules").select("tag_id").eq("organization_id", organizationId).eq("rich_menu_id", richMenuId).eq("is_active", true),
+    client.from("surveys").select("id, settings_json").eq("organization_id", organizationId).contains("settings_json", { postSurveyRichMenuId: richMenuId })
+  ]);
+  if (assignments.error || rules.error || surveys.error) throw new Error("リッチメニューの対象顧客を取得できませんでした。");
+  for (const value of assignments.data || []) ids.add(String(row(value).contact_id));
+
+  const tagIds = (rules.data || []).map((value) => String(row(value).tag_id));
+  if (tagIds.length) {
+    const tagAssignments = await client.from("contact_tag_assignments").select("contact_id").eq("organization_id", organizationId).in("tag_id", tagIds).is("removed_at", null);
+    if (tagAssignments.error) throw new Error("リッチメニュー対象タグを取得できませんでした。");
+    for (const value of tagAssignments.data || []) ids.add(String(row(value).contact_id));
+  }
+
+  for (const surveyValue of surveys.data || []) {
+    const survey = row(surveyValue);
+    const settings = row(survey.settings_json);
+    const fallbackMinutes = typeof settings.richMenuFallbackMinutes === "number"
+      ? Math.min(Math.max(Math.round(settings.richMenuFallbackMinutes), 1), 1_440)
+      : 30;
+    const sessions = await client.from("survey_sessions").select("contact_id, status, started_at").eq("organization_id", organizationId).eq("survey_id", String(survey.id)).in("status", ["active", "completed"]);
+    if (sessions.error) throw new Error("アンケートのリッチメニュー対象者を取得できませんでした。");
+    const fallbackAt = Date.now() - fallbackMinutes * 60 * 1000;
+    for (const value of sessions.data || []) {
+      const session = row(value);
+      if (session.status === "completed" || Date.parse(String(session.started_at)) <= fallbackAt) {
+        ids.add(String(session.contact_id));
+      }
+    }
+  }
+  return [...ids];
+}
+
+export async function repairLiveRichMenuDisplay(input: {
+  client: SupabaseClient;
+  organizationId: string;
+  richMenuId: string;
+}): Promise<{ recreated: boolean; relinked: number; failed: number }> {
+  assertLaunchAction("LINE_RICH_MENU_MUTATION_ENABLED");
+  const selected = await input.client.from("rich_menus").select("id, name, line_rich_menu_id, definition_json, selected, status").eq("organization_id", input.organizationId).eq("id", input.richMenuId).eq("status", "active").maybeSingle();
+  if (selected.error || !selected.data || !row(selected.data).line_rich_menu_id) throw new Error("修復するリッチメニューが見つかりません。");
+  const menu = row(selected.data);
+  let recreated = false;
+  const currentLineId = String(menu.line_rich_menu_id);
+  const remote = await lineRequest(`/v2/bot/richmenu/${encodeURIComponent(currentLineId)}`);
+
+  if (remote.body.selected !== true || menu.selected !== true || row(menu.definition_json).selected !== true) {
+    const image = await lineContentRequest(`/v2/bot/richmenu/${encodeURIComponent(currentLineId)}/content`);
+    const definition = {
+      size: row(remote.body.size),
+      selected: RICH_MENU_OPENS_BY_DEFAULT,
+      name: typeof remote.body.name === "string" ? remote.body.name : String(menu.name),
+      chatBarText: typeof remote.body.chatBarText === "string" ? remote.body.chatBarText : "メニュー",
+      areas: Array.isArray(remote.body.areas) ? remote.body.areas : []
+    };
+    await lineRequest("/v2/bot/richmenu/validate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(definition) });
+    const created = await lineRequest("/v2/bot/richmenu", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(definition) });
+    const newLineId = typeof created.body.richMenuId === "string" ? created.body.richMenuId : null;
+    if (!newLineId) throw new Error("自動表示用のLINE rich menu IDを取得できませんでした。");
+    try {
+      const body = image.bytes.buffer.slice(image.bytes.byteOffset, image.bytes.byteOffset + image.bytes.byteLength) as ArrayBuffer;
+      await lineRequest(`/v2/bot/richmenu/${encodeURIComponent(newLineId)}/content`, { method: "POST", headers: { "Content-Type": image.contentType }, body }, true);
+      const updated = await input.client.from("rich_menus").update({ line_rich_menu_id: newLineId, selected: RICH_MENU_OPENS_BY_DEFAULT, definition_json: definition, updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("id", input.richMenuId);
+      if (updated.error) throw new Error("自動表示用リッチメニューをDBへ保存できませんでした。");
+      recreated = true;
+    } catch (error) {
+      await lineRequest(`/v2/bot/richmenu/${encodeURIComponent(newLineId)}`, { method: "DELETE" }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  const contactIds = await intendedRichMenuContactIds(input.client, input.organizationId, input.richMenuId);
+  let relinked = 0;
+  let failed = 0;
+  for (const contactId of contactIds) {
+    try {
+      await linkLiveRichMenu({ client: input.client, organizationId: input.organizationId, contactId, richMenuId: input.richMenuId, sourceType: "survey" });
+      relinked += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  return { recreated, relinked, failed };
 }
 
 async function currentUserRichMenu(lineUserId: string): Promise<string | null> {

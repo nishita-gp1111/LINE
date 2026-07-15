@@ -79,9 +79,29 @@ describe("Mock webhook store integration", () => {
     expect((await store.listContacts({ page: 1, pageSize: 50 })).items[0]?.friendStatus).toBe("following");
   });
 
+  it("schedules one inbound notification only after a new message is stored", async () => {
+    const store = new MockWebhookStore();
+    const notifications: Array<{ messageId: string; conversationId: string }> = [];
+    const context = {
+      organizationId,
+      profileClient,
+      onInboundMessage: (input: { messageId: string; conversationId: string }) => {
+        notifications.push({ messageId: input.messageId, conversationId: input.conversationId });
+      }
+    };
+    const event = eventFromFixture("text");
+
+    expect(await processWebhookEvent(event, store, context)).toBe("processed");
+    expect(await processWebhookEvent(event, store, context)).toBe("duplicate");
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]?.messageId).toMatch(/^mock-message-/);
+    expect(notifications[0]?.conversationId).toMatch(/^mock-conversation-/);
+  });
+
   it("enrolls from the signed text event without retaining the one-time phrase", async () => {
     const store = new MockWebhookStore();
     const enrollmentInputs: Array<{ lineUserId: string; message?: string | null }> = [];
+    const notifications: string[] = [];
     const source = eventFromFixture("text");
     const result = await processWebhookEvent(source, store, {
       organizationId,
@@ -89,7 +109,8 @@ describe("Mock webhook store integration", () => {
       controlledRecipientEnrollment: async (input) => {
         enrollmentInputs.push({ lineUserId: input.lineUserId, message: input.message });
         return { matched: true, status: "enrolled" };
-      }
+      },
+      onInboundMessage: (input) => notifications.push(input.messageId)
     });
 
     expect(result).toBe("processed");
@@ -99,6 +120,7 @@ describe("Mock webhook store integration", () => {
     expect(message?.textContent).toBe(CONTROLLED_ENROLLMENT_REDACTED_TEXT);
     expect(JSON.stringify(message?.payloadJson)).not.toContain("fixture message");
     expect(message?.payloadJson).toMatchObject({ hasText: false, controlledLaunchEnrollment: true });
+    expect(notifications).toEqual([]);
   });
 });
 

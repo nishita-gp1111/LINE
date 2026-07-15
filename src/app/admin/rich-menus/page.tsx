@@ -20,6 +20,7 @@ type Menu = {
   links?: string[];
   tagId?: string | null;
   tagName?: string | null;
+  opensByDefault?: boolean;
 };
 type Tag = { id: string; name: string };
 
@@ -169,6 +170,31 @@ export default function RichMenusPage() {
     }
   }
 
+  async function repair(menu: Menu) {
+    setWorking(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/milestone3/rich-menus", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ menuId: menu.id })
+      });
+      const data = await response.json() as { error?: string; repair?: { recreated?: boolean; relinked?: number; failed?: number } };
+      if (!response.ok || data.error) {
+        setMessage(data.error || "リッチメニューの表示を修復できませんでした。");
+        return;
+      }
+      const relinked = data.repair?.relinked || 0;
+      const failed = data.repair?.failed || 0;
+      setMessage(`「${menu.name}」の自動表示を修復し、対象${relinked}名へ再反映しました。${failed ? ` 未反映: ${failed}名` : ""}`);
+      await load();
+    } catch {
+      setMessage("通信に失敗しました。時間をおいてもう一度お試しください。");
+    } finally {
+      setWorking(false);
+    }
+  }
+
   const canCreate = !working && Boolean(form.name.trim() && form.tagId && form.chatBarText.trim() && image && allActionsValid);
 
   return <main className="min-h-screen px-4 py-6 sm:px-8 sm:py-8 lg:px-10">
@@ -269,14 +295,14 @@ export default function RichMenusPage() {
             </div>
             <label className="mt-4 flex items-start gap-2 rounded-lg border border-line p-3 text-xs leading-relaxed"><input type="checkbox" checked={form.applyExisting} onChange={(event) => setForm({ ...form, applyExisting: event.target.checked })} className="mt-0.5" /><span><b className="block">既存の対象顧客にも反映</b>すでにこのタグを持つ許可済み顧客へ、作成後すぐ切り替えます。</span></label>
             <button type="button" onClick={() => void create()} disabled={!canCreate} className="focus-ring mt-4 w-full rounded-xl bg-ink px-4 py-3 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-35">{working ? "作成しています…" : "リッチメニューを作成"}</button>
-            {message ? <p role="status" className={`mt-3 rounded-lg px-3 py-2 text-xs font-bold ${message.includes("作成し、") ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>{message}</p> : null}
+            {message ? <p role="status" className={`mt-3 rounded-lg px-3 py-2 text-xs font-bold ${message.includes("作成し、") || message.includes("修復し、") ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>{message}</p> : null}
           </section>
         </aside>
       </div>
 
       <section className="mt-6 rounded-2xl border border-line bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-black">作成済みメニュー</h2><p className="mt-1 text-xs text-ink/50">タグ条件ごとの適用状況を確認できます。</p></div><span className="rounded-full bg-paper px-3 py-1 text-xs font-bold text-ink/55">{menus.length}件</span></div>
-        {menus.length ? <div className="mt-4 grid gap-2">{menus.map((menu) => <div key={menu.id} className="flex flex-col justify-between gap-2 rounded-xl border border-line p-4 text-sm sm:flex-row sm:items-center"><span><b>{menu.name}</b><span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-800">{menu.status}</span></span><span className="text-xs text-ink/55">{menu.tagName ? `${menu.tagName} → ` : "条件なし / "}{menu.linkCount ?? menu.links?.length ?? 0}名に適用中</span></div>)}</div> : <div className="mt-4 rounded-xl border border-dashed border-line bg-paper/35 py-8 text-center text-sm text-ink/45">作成済みのリッチメニューはまだありません。</div>}
+        {menus.length ? <div className="mt-4 grid gap-2">{menus.map((menu) => <div key={menu.id} className="flex flex-col justify-between gap-3 rounded-xl border border-line p-4 text-sm sm:flex-row sm:items-center"><span><b>{menu.name}</b><span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-800">{menu.status}</span><span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-bold ${menu.opensByDefault ? "bg-sky-50 text-sky-800" : "bg-amber-50 text-amber-800"}`}>{menu.opensByDefault ? "自動表示ON" : "自動表示の修復が必要"}</span><span className="mt-1 block text-xs text-ink/55">{menu.tagName ? `${menu.tagName} → ` : "条件なし / "}{menu.linkCount ?? menu.links?.length ?? 0}名に適用中</span></span><button type="button" onClick={() => void repair(menu)} disabled={working} className="focus-ring shrink-0 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-900 disabled:opacity-40">{menu.opensByDefault ? "対象者へ再反映" : "自動表示を修復"}</button></div>)}</div> : <div className="mt-4 rounded-xl border border-dashed border-line bg-paper/35 py-8 text-center text-sm text-ink/45">作成済みのリッチメニューはまだありません。</div>}
       </section>
     </div>
   </main>;

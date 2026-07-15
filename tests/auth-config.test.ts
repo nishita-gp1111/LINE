@@ -71,6 +71,9 @@ describe("environment schema", () => {
     expect(env.LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED).toBe(false);
     expect(env.LINE_CONTROLLED_LAUNCH_ENROLLMENT_TOKEN_HASH).toBeUndefined();
     expect(env.ADMIN_EMAIL_ALLOWLIST).toEqual([]);
+    expect(env.INBOUND_EMAIL_NOTIFICATIONS_ENABLED).toBe(false);
+    expect(env.INBOUND_EMAIL_NOTIFICATION_RECIPIENTS).toEqual([]);
+    expect(env.INBOUND_EMAIL_NOTIFICATION_COOLDOWN_MINUTES).toBe(10);
     expect(env.SURVEY_MAX_QUESTIONS).toBe(50);
   });
 
@@ -82,7 +85,11 @@ describe("environment schema", () => {
       MOCK_LINE_API: "false",
       LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED: "true",
       LINE_CONTROLLED_LAUNCH_ENROLLMENT_TOKEN_HASH: "a".repeat(64),
-      ADMIN_EMAIL_ALLOWLIST: "Owner@Example.com, admin@example.com"
+      ADMIN_EMAIL_ALLOWLIST: "Owner@Example.com, admin@example.com",
+      INBOUND_EMAIL_NOTIFICATIONS_ENABLED: "true",
+      INBOUND_EMAIL_NOTIFICATION_RECIPIENTS: "s.nishita@growth-path.jp, y.imahuku@growth-path.jp",
+      INBOUND_EMAIL_NOTIFICATION_FROM: "notifications@updates.growth-path.jp",
+      RESEND_API_KEY: "re_test_secret"
     });
 
     expect(env.NEXT_PUBLIC_APP_URL).toBe("http://127.0.0.1:3000");
@@ -94,5 +101,13 @@ describe("environment schema", () => {
       "owner@example.com",
       "admin@example.com"
     ]);
+    expect(env.INBOUND_EMAIL_NOTIFICATION_RECIPIENTS).toEqual([
+      "s.nishita@growth-path.jp",
+      "y.imahuku@growth-path.jp"
+    ]);
+  });
+
+  it("rejects an enabled notification setup without server-only provider settings", () => {
+    expect(() => parseEnv({ INBOUND_EMAIL_NOTIFICATIONS_ENABLED: "true" })).toThrow();
   });
 });

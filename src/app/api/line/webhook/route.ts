@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getServerEnv } from "@/lib/env/server";
 import { getLineRuntimeConfig } from "@/lib/line/config";
 import { LineConfigurationError } from "@/lib/line/errors";
@@ -9,6 +9,8 @@ import { processWebhookEvents } from "@/lib/webhook/processor";
 import { getMockWebhookStore } from "@/lib/webhook/store";
 import { createSupabaseWebhookStore } from "@/lib/webhook/store-supabase";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { sendInboundEmailNotification } from "@/lib/notifications/inbound-email";
+import { SupabaseInboundEmailHistory } from "@/lib/notifications/inbound-email-supabase";
 
 export const runtime = "nodejs";
 
@@ -52,13 +54,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "Webhook保存先の設定が不足しています。" }, { status: 503 });
     }
 
+    const adminClient = config.mode === "live" ? createSupabaseAdminClient() || undefined : undefined;
+    const emailHistory = adminClient ? new SupabaseInboundEmailHistory(adminClient) : undefined;
     const result = await processWebhookEvents(parsed.data.events, store, {
       organizationId: config.organizationId,
       profileClient: new LineProfileClient({
         mode: config.mode,
         channelAccessToken: config.channelAccessToken
       }),
-      minimumLaunchClient: config.mode === "live" ? createSupabaseAdminClient() || undefined : undefined
+      minimumLaunchClient: adminClient,
+      onInboundMessage: env.INBOUND_EMAIL_NOTIFICATIONS_ENABLED && emailHistory
+        ? (message) => {
+            after(async () => {
+              try {
+                const notification = await sendInboundEmailNotification({
+                  message,
+                  env,
+                  history: emailHistory
+                });
+                if (notification.status === "failed") {
+                  console.error(`[inbound-email] ${notification.errorCode}`);
+                }
+              } catch {
+                console.error("[inbound-email] unexpected notification failure");
+              }
+            });
+          }
+        : undefined
     });
     return NextResponse.json({ ok: true, events: parsed.data.events.length, ...result });
   } catch (error) {
