@@ -15,6 +15,7 @@ export type RichMenuLayoutId =
   | "split-2"
   | "stack-2"
   | "hero-3"
+  | "hero-3-friendly"
   | "columns-3"
   | "grid-4"
   | "grid-6";
@@ -61,6 +62,16 @@ export const RICH_MENU_LAYOUTS: RichMenuLayout[] = [
       { x: 0, y: 0, width: 10_000, height: 5_000 },
       { x: 0, y: 5_000, width: 5_000, height: 5_000 },
       { x: 5_000, y: 5_000, width: 5_000, height: 5_000 }
+    ]
+  },
+  {
+    id: "hero-3-friendly",
+    label: "3ボタン",
+    description: "上58%・下42%",
+    areas: [
+      { x: 0, y: 0, width: 10_000, height: 5_800 },
+      { x: 0, y: 5_800, width: 5_000, height: 4_200 },
+      { x: 5_000, y: 5_800, width: 5_000, height: 4_200 }
     ]
   },
   {

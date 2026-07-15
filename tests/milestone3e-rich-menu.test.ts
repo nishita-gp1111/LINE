@@ -40,4 +40,12 @@ describe("Milestone 3E rich menu", () => {
     expect(areas[0].y + areas[0].height).toBe(areas[3].y);
     expect(areas[3].y + areas[3].height).toBe(1686);
   });
+  it("matches the friendly hero image at a 58/42 row boundary", () => {
+    const areas = scaleRichMenuLayout("hero-3-friendly", 1536, 1024);
+    expect(areas).toEqual([
+      { x: 0, y: 0, width: 1536, height: 593 },
+      { x: 0, y: 593, width: 768, height: 431 },
+      { x: 768, y: 593, width: 768, height: 431 }
+    ]);
+  });
 });
