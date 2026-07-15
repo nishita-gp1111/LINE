@@ -3,6 +3,7 @@
 /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { GP_AFTER_SURVEY_PRESET, gpAfterSurveyTagNames } from "@/lib/minimum-launch/survey-preset";
 
 type Tag = { id: string; name: string };
 type Contact = { id: string; displayName: string; friendStatus: string };
@@ -94,6 +95,35 @@ export default function SurveysPage() {
     setQuestions([makeQuestion(true)]);
     setPreviewIndex(0);
     setPreviewCompleted(false);
+  }
+
+  function applyAfterSurveyPreset() {
+    const missingTags = gpAfterSurveyTagNames().filter((name) => !tags.some((tag) => tag.name === name));
+    if (missingTags.length) {
+      setMessage(`必要なタグが不足しています：${missingTags.join("、")}`);
+      return;
+    }
+    const richMenu = menus.find((menu) => menu.name === GP_AFTER_SURVEY_PRESET.richMenuName);
+    setForm({
+      name: GP_AFTER_SURVEY_PRESET.name,
+      sendOnFollow: GP_AFTER_SURVEY_PRESET.sendOnFollow,
+      greetingMessage: GP_AFTER_SURVEY_PRESET.greetingMessage,
+      completionMessage: GP_AFTER_SURVEY_PRESET.completionMessage,
+      postSurveyRichMenuId: richMenu?.id ?? "",
+      richMenuFallbackMinutes: GP_AFTER_SURVEY_PRESET.richMenuFallbackMinutes
+    });
+    setQuestions(GP_AFTER_SURVEY_PRESET.questions.map((question) => ({
+      key: crypto.randomUUID(),
+      title: question.title,
+      options: question.options.map((option) => ({
+        key: crypto.randomUUID(),
+        label: option.label,
+        tagId: tags.find((tag) => tag.name === option.tagName)?.id ?? ""
+      }))
+    })));
+    setPreviewIndex(0);
+    setPreviewCompleted(false);
+    setMessage(richMenu ? "アフターアンケートの全設定を入力しました。内容を確認して作成してください。" : "質問とタグを入力しました。完了後のリッチメニューを選択してください。");
   }
 
   async function create() {
@@ -234,6 +264,8 @@ export default function SurveysPage() {
               <h2 className="mt-1 text-lg font-black">質問を順番につなげる</h2>
             </div>
             <div className="grid gap-6 p-5 sm:p-6">
+              <button type="button" onClick={applyAfterSurveyPreset} disabled={working} className="focus-ring rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm font-black text-sky-900 shadow-sm transition hover:bg-sky-100 disabled:opacity-40">✨ GPアフターアンケートを自動入力</button>
+              <p className="-mt-4 text-center text-[11px] leading-relaxed text-ink/45">挨拶・5問・28タグ・完了文・30分後のリッチメニューをまとめて設定します。</p>
               <label className="grid gap-1.5 text-xs font-black text-ink/65">管理用の名前<span className="font-normal text-ink/40">顧客には表示されません</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例：初回ヒアリング" maxLength={150} className="focus-ring min-h-11 rounded-xl border border-line px-3 text-sm font-normal" /></label>
 
               <div className="grid gap-4 sm:grid-cols-2">
