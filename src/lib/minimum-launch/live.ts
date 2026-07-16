@@ -19,7 +19,7 @@ import { followSurveyClientRequestId, parseSurveyPostbackData, selectEligibleSur
 import { validateRichMenuImage } from "@/lib/minimum-launch/rich-menu-image";
 import { RICH_MENU_OPENS_BY_DEFAULT, scaleRichMenuLayout, type RichMenuActionInput } from "@/lib/minimum-launch/rich-menu-layouts";
 import { buildSurveyCompletionMessage, buildSurveyGreetingMessage, buildSurveyQuestionMessage, type LineFlexMessage } from "@/lib/minimum-launch/survey-flex-message";
-import { assertPerUserRichMenuPath } from "@/lib/milestone3/rich-menu";
+import { assertDefaultRichMenuPath, assertPerUserRichMenuPath } from "@/lib/milestone3/rich-menu";
 
 type Row = Record<string, unknown>;
 type RichMenuSync = "linked" | "restored" | "unchanged" | "not_configured" | "disabled" | "blocked" | "recipient_not_allowed";
@@ -54,6 +54,30 @@ async function lineRequest(path: string, init: RequestInit = {}, dataApi = false
     return { status: response.status, body, headers: response.headers };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw new Error("LINE API request timed out");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function defaultRichMenuRequest(path: string, init: RequestInit = {}): Promise<{ status: number; body: Row }> {
+  assertDefaultRichMenuPath(path);
+  const token = getServerEnv().LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token) throw new Error("LINE_CHANNEL_ACCESS_TOKENが設定されていません。");
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(`https://api.line.me${path}`, { ...init, headers, redirect: "error", signal: controller.signal });
+    let body: Row = {};
+    if (response.headers.get("content-type")?.includes("json")) {
+      try { body = row(await response.json()); } catch { body = {}; }
+    }
+    if (!response.ok) throw new Error(`LINE default rich menu request failed (${response.status})`);
+    return { status: response.status, body };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw new Error("LINE default rich menu request timed out");
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -819,9 +843,36 @@ export async function listLiveRichMenus(client: SupabaseClient, organizationId: 
     const menu = row(menuValue);
     const rule = row((rules.data || []).find((value) => String(row(value).rich_menu_id) === String(menu.id)));
     const { count } = await client.from("rich_menu_assignments").select("contact_id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("rich_menu_id", String(menu.id)).eq("status", "synced");
-    result.push({ ...menu, opensByDefault: menu.selected === true && row(menu.definition_json).selected === true, linkCount: count || 0, tagId: rule.tag_id || null, tagName: rule.tag_id ? tagNames.get(String(rule.tag_id)) || "削除済みタグ" : null });
+    result.push({ ...menu, isDefault: menu.is_default === true, opensByDefault: menu.selected === true && row(menu.definition_json).selected === true, linkCount: count || 0, tagId: rule.tag_id || null, tagName: rule.tag_id ? tagNames.get(String(rule.tag_id)) || "削除済みタグ" : null });
   }
   return result;
+}
+
+export async function setLiveDefaultRichMenu(input: {
+  client: SupabaseClient;
+  organizationId: string;
+  richMenuId: string;
+}): Promise<{ lineRichMenuId: string; unchanged: boolean }> {
+  assertLaunchAction("LINE_RICH_MENU_MUTATION_ENABLED");
+  const selected = await input.client.from("rich_menus").select("id, line_rich_menu_id, is_default, status").eq("organization_id", input.organizationId).eq("id", input.richMenuId).eq("status", "active").maybeSingle();
+  if (selected.error || !selected.data || !row(selected.data).line_rich_menu_id) throw new Error("基本リッチメニューが見つかりません。");
+  const menu = row(selected.data);
+  const lineRichMenuId = String(menu.line_rich_menu_id);
+  const previous = await input.client.from("rich_menus").select("id, line_rich_menu_id").eq("organization_id", input.organizationId).eq("is_default", true).neq("id", input.richMenuId).maybeSingle();
+
+  await defaultRichMenuRequest(`/v2/bot/user/all/richmenu/${encodeURIComponent(lineRichMenuId)}`, { method: "POST" });
+  const now = new Date().toISOString();
+  const cleared = await input.client.from("rich_menus").update({ is_default: false, updated_at: now }).eq("organization_id", input.organizationId).eq("is_default", true).neq("id", input.richMenuId);
+  const marked = await input.client.from("rich_menus").update({ is_default: true, updated_at: now }).eq("organization_id", input.organizationId).eq("id", input.richMenuId);
+  if (cleared.error || marked.error) {
+    const previousLineId = previous.data && row(previous.data).line_rich_menu_id ? String(row(previous.data).line_rich_menu_id) : null;
+    if (previousLineId) await defaultRichMenuRequest(`/v2/bot/user/all/richmenu/${encodeURIComponent(previousLineId)}`, { method: "POST" }).catch(() => undefined);
+    else await defaultRichMenuRequest("/v2/bot/user/all/richmenu", { method: "DELETE" }).catch(() => undefined);
+    await input.client.from("rich_menus").update({ is_default: false, updated_at: now }).eq("organization_id", input.organizationId).eq("id", input.richMenuId);
+    if (previous.data?.id) await input.client.from("rich_menus").update({ is_default: true, updated_at: now }).eq("organization_id", input.organizationId).eq("id", String(previous.data.id));
+    throw new Error("基本リッチメニューの設定状態を保存できませんでした。");
+  }
+  return { lineRichMenuId, unchanged: menu.is_default === true };
 }
 
 async function intendedRichMenuContactIds(client: SupabaseClient, organizationId: string, richMenuId: string): Promise<string[]> {
@@ -866,7 +917,7 @@ export async function repairLiveRichMenuDisplay(input: {
   richMenuId: string;
 }): Promise<{ recreated: boolean; relinked: number; failed: number }> {
   assertLaunchAction("LINE_RICH_MENU_MUTATION_ENABLED");
-  const selected = await input.client.from("rich_menus").select("id, name, line_rich_menu_id, definition_json, selected, status").eq("organization_id", input.organizationId).eq("id", input.richMenuId).eq("status", "active").maybeSingle();
+  const selected = await input.client.from("rich_menus").select("id, name, line_rich_menu_id, definition_json, selected, is_default, status").eq("organization_id", input.organizationId).eq("id", input.richMenuId).eq("status", "active").maybeSingle();
   if (selected.error || !selected.data || !row(selected.data).line_rich_menu_id) throw new Error("修復するリッチメニューが見つかりません。");
   const menu = row(selected.data);
   let recreated = false;
@@ -891,6 +942,7 @@ export async function repairLiveRichMenuDisplay(input: {
       await lineRequest(`/v2/bot/richmenu/${encodeURIComponent(newLineId)}/content`, { method: "POST", headers: { "Content-Type": image.contentType }, body }, true);
       const updated = await input.client.from("rich_menus").update({ line_rich_menu_id: newLineId, selected: RICH_MENU_OPENS_BY_DEFAULT, definition_json: definition, updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("id", input.richMenuId);
       if (updated.error) throw new Error("自動表示用リッチメニューをDBへ保存できませんでした。");
+      if (menu.is_default === true) await defaultRichMenuRequest(`/v2/bot/user/all/richmenu/${encodeURIComponent(newLineId)}`, { method: "POST" });
       recreated = true;
     } catch (error) {
       await lineRequest(`/v2/bot/richmenu/${encodeURIComponent(newLineId)}`, { method: "DELETE" }).catch(() => undefined);

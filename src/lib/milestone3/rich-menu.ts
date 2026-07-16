@@ -23,7 +23,12 @@ export function validateRichMenuDefinition(input: unknown) {
 }
 
 export function assertRichMenuMutation(input: { mock: boolean; enabled: boolean; role: string; isDefaultChange: boolean; confirmation: string }): void {
-  if (input.isDefaultChange) throw new Error("Minimum Production Launchではデフォルトリッチメニューを変更できません。");
+  if (input.isDefaultChange) {
+    if (!input.mock && !input.enabled) throw new Error("LINE_RICH_MENU_MUTATION_ENABLED is disabled");
+    if (!["owner", "admin"].includes(input.role)) throw new Error("デフォルトリッチメニューの変更権限がありません。");
+    if (input.confirmation !== "SET_DEFAULT_RICH_MENU") throw new Error("全員へ表示する確認が必要です。");
+    return;
+  }
   if (input.mock) return;
   if (!input.enabled) throw new Error("LINE_RICH_MENU_MUTATION_ENABLED is disabled");
   if (!["owner", "admin"].includes(input.role)) throw new Error("リッチメニュー操作権限がありません。");
@@ -32,5 +37,11 @@ export function assertRichMenuMutation(input: { mock: boolean; enabled: boolean;
 export function assertPerUserRichMenuPath(path: string): void {
   if (/^\/v2\/bot\/user\/all\/richmenu(?:\/|$)/.test(path)) {
     throw new Error("デフォルトリッチメニュー変更APIは使用できません。");
+  }
+}
+
+export function assertDefaultRichMenuPath(path: string): void {
+  if (!/^\/v2\/bot\/user\/all\/richmenu(?:\/[^/]+)?$/.test(path)) {
+    throw new Error("デフォルトリッチメニュー専用API以外は使用できません。");
   }
 }

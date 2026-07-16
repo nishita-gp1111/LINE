@@ -3,8 +3,9 @@ import { getAuthenticatedUser } from "@/lib/auth/server";
 import { canAdminister, getInboxAuthContext } from "@/lib/inbox/auth";
 import { getServerEnv } from "@/lib/env/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createLiveRichMenu, repairLiveRichMenuDisplay } from "@/lib/minimum-launch/live";
+import { createLiveRichMenu, repairLiveRichMenuDisplay, setLiveDefaultRichMenu } from "@/lib/minimum-launch/live";
 import { getRichMenuLayout, type RichMenuActionInput } from "@/lib/minimum-launch/rich-menu-layouts";
+import { assertRichMenuMutation } from "@/lib/milestone3/rich-menu";
 
 export const runtime = "nodejs";
 
@@ -74,8 +75,14 @@ export async function PATCH(request: Request) {
   if (!auth || !client) return reply({ error: "database_not_configured" }, 503);
   if (!canAdminister(auth.role)) return reply({ error: "管理者権限が必要です。" }, 403);
   try {
-    const body = await request.json() as { menuId?: unknown };
+    const body = await request.json() as { action?: unknown; menuId?: unknown; confirmation?: unknown };
     if (typeof body.menuId !== "string" || !body.menuId) return reply({ error: "リッチメニューを選択してください。" }, 400);
+    if (body.action === "set_default") {
+      const env = getServerEnv();
+      assertRichMenuMutation({ mock: env.MOCK_LINE_API, enabled: env.LINE_RICH_MENU_MUTATION_ENABLED, role: auth.role, isDefaultChange: true, confirmation: String(body.confirmation || "") });
+      const defaultMenu = await setLiveDefaultRichMenu({ client, organizationId: auth.organizationId, richMenuId: body.menuId });
+      return reply({ defaultMenu });
+    }
     const repair = await repairLiveRichMenuDisplay({
       client,
       organizationId: auth.organizationId,

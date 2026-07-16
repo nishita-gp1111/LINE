@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertPerUserRichMenuPath, assertRichMenuMutation, validateRichMenuDefinition } from "@/lib/milestone3/rich-menu";
+import { assertDefaultRichMenuPath, assertPerUserRichMenuPath, assertRichMenuMutation, validateRichMenuDefinition } from "@/lib/milestone3/rich-menu";
 import { RICH_MENU_LAYOUTS, RICH_MENU_OPENS_BY_DEFAULT, scaleRichMenuLayout } from "@/lib/minimum-launch/rich-menu-layouts";
 import { buildFriendlyRichMenuSvg, GP_FRIENDLY_RICH_MENU_PRESET } from "@/lib/minimum-launch/rich-menu-preset";
 
@@ -19,12 +19,20 @@ describe("Milestone 3E rich menu", () => {
   });
   it("requires explicit owner confirmation before global default changes", () => {
     expect(() => assertRichMenuMutation({ mock: false, enabled: false, role: "owner", isDefaultChange: true, confirmation: "SET_DEFAULT_RICH_MENU" })).toThrow();
-    expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "admin", isDefaultChange: true, confirmation: "SET_DEFAULT_RICH_MENU" })).toThrow();
-    expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "owner", isDefaultChange: true, confirmation: "SET_DEFAULT_RICH_MENU" })).toThrow();
+    expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "viewer", isDefaultChange: true, confirmation: "SET_DEFAULT_RICH_MENU" })).toThrow();
+    expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "admin", isDefaultChange: true, confirmation: "" })).toThrow();
+    expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "admin", isDefaultChange: true, confirmation: "SET_DEFAULT_RICH_MENU" })).not.toThrow();
+    expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "owner", isDefaultChange: true, confirmation: "SET_DEFAULT_RICH_MENU" })).not.toThrow();
   });
   it("rejects the LINE default rich-menu endpoint", () => {
     expect(() => assertPerUserRichMenuPath("/v2/bot/user/all/richmenu/Rmenu")).toThrow();
     expect(() => assertPerUserRichMenuPath("/v2/bot/user/U123/richmenu/Rmenu")).not.toThrow();
+  });
+  it("allows only the exact LINE default rich-menu endpoints through the global path", () => {
+    expect(() => assertDefaultRichMenuPath("/v2/bot/user/all/richmenu/Rmenu")).not.toThrow();
+    expect(() => assertDefaultRichMenuPath("/v2/bot/user/all/richmenu")).not.toThrow();
+    expect(() => assertDefaultRichMenuPath("/v2/bot/user/U123/richmenu/Rmenu")).toThrow();
+    expect(() => assertDefaultRichMenuPath("/v2/bot/user/all/richmenu/Rmenu/content")).toThrow();
   });
   it("scales every visual layout inside the uploaded image", () => {
     for (const layout of RICH_MENU_LAYOUTS) {

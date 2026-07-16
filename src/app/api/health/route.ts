@@ -57,7 +57,7 @@ export async function GET() {
         allowedRecipientCount,
         productionRequiresSingleRecipient: env.LINE_RECIPIENT_MODE === "controlled"
       },
-      defaultRichMenuMutationAllowed: false,
+      defaultRichMenuMutationAllowed: env.LINE_RICH_MENU_MUTATION_ENABLED,
       scheduler: publicLaunchStatus(),
       blockers: launchBlockers({ allowedRecipientCount })
     }
