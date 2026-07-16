@@ -143,6 +143,7 @@ export async function processWebhookEvent(
         payloadJson: enrollment.matched
           ? { type: "text", hasText: false, messageIdPresent: true, controlledLaunchEnrollment: true }
           : minimalMessagePayload(event),
+        lineMarkAsReadToken: event.message.markAsReadToken || null,
         eventAt: eventAt(event)
       });
       if (inserted.inserted && inserted.message && store.ensureConversationForContact) {

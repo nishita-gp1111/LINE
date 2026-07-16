@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ContactTagsPanel } from "@/components/contact-tags-panel";
 import type {
   ConversationDetail,
@@ -91,6 +91,24 @@ export default function InboxClient(props: Props) {
   const selected = props.selected;
   const canOperate = props.role !== "viewer";
   const blocked = selected?.contact.friendStatus === "blocked";
+  const autoReadKeyRef = useRef<string | null>(null);
+  const selectedConversationId = selected?.conversation.id || null;
+  const selectedLastMessageId = selected?.messages.at(-1)?.id || null;
+  const selectedLastInboundMessageId = [...(selected?.messages || [])].reverse().find((message) => message.direction === "inbound")?.id || null;
+
+  useEffect(() => {
+    if (!selectedConversationId || !selectedLastInboundMessageId) return;
+    const key = `${selectedConversationId}:${selectedLastInboundMessageId}`;
+    if (autoReadKeyRef.current === key) return;
+    autoReadKeyRef.current = key;
+    void postAction({ action: "read", conversationId: selectedConversationId, lastMessageId: selectedLastMessageId })
+      .then((result) => {
+        if (!result.ok) autoReadKeyRef.current = null;
+      })
+      .catch(() => {
+        autoReadKeyRef.current = null;
+      });
+  }, [selectedConversationId, selectedLastInboundMessageId, selectedLastMessageId]);
 
   function conversationHref(conversationId: string, filter = props.filter) {
     return `/admin/inbox?conversation=${encodeURIComponent(conversationId)}&filter=${filter}&q=${encodeURIComponent(props.search)}`;

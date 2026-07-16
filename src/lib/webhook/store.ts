@@ -112,6 +112,7 @@ export type InboundMessageInput = {
   messageType: string;
   textContent: string | null;
   payloadJson: Record<string, unknown>;
+  lineMarkAsReadToken?: string | null;
   eventAt: string;
 };
 
@@ -158,6 +159,7 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
   private readonly notes = new Map<string, ConversationNote>();
   private readonly quickReplies = new Map<string, QuickReplyTemplate>();
   private readonly unreadMessageIds = new Map<string, Set<string>>();
+  private readonly lineMarkAsReadTokens = new Map<string, string>();
   private readonly profiles = new Map<string, ProfileSummary>([
     ["mock-user", { id: "mock-user", displayName: "LINE CRMオーナー", email: "owner@example.local", role: "owner" }]
   ]);
@@ -256,7 +258,10 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
             message.organizationId === input.organizationId && message.lineMessageId === input.lineMessageId
         )
       : undefined;
-    if (duplicate) return { inserted: false, message: duplicate };
+    if (duplicate) {
+      if (input.lineMarkAsReadToken) this.lineMarkAsReadTokens.set(duplicate.id, input.lineMarkAsReadToken);
+      return { inserted: false, message: duplicate };
+    }
 
     const message: MessageRecord = {
       id: `mock-message-${randomUUID()}`,
@@ -289,6 +294,7 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
       updatedAt: new Date().toISOString()
     };
     this.messages.set(message.id, message);
+    if (input.lineMarkAsReadToken) this.lineMarkAsReadTokens.set(message.id, input.lineMarkAsReadToken);
     return { inserted: true, message };
   }
 
@@ -504,6 +510,13 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
     state.lastReadMessageId = lastMessageId || null;
     state.updatedAt = state.lastReadAt;
     return state;
+  }
+
+  async getLatestLineMarkAsReadToken(organizationId: string, conversationId: string): Promise<string | null> {
+    const message = [...this.messages.values()]
+      .filter((item) => item.organizationId === organizationId && item.conversationId === conversationId && item.direction === "inbound" && this.lineMarkAsReadTokens.has(item.id))
+      .sort((left, right) => Date.parse(right.lineEventTimestamp) - Date.parse(left.lineEventTimestamp))[0];
+    return message ? this.lineMarkAsReadTokens.get(message.id) || null : null;
   }
 
   async updateConversation(organizationId: string, conversationId: string, profileId: string, role: InboxRole, update: ConversationUpdate): Promise<ConversationRecord> {

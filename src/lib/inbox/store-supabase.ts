@@ -121,6 +121,32 @@ export class SupabaseInboxStore implements InboxStore {
     return mapReadState(data as Row, organizationId, conversationId, profileId);
   }
 
+  async getLatestLineMarkAsReadToken(organizationId: string, conversationId: string): Promise<string | null> {
+    const latestMessages = await this.client
+      .from("messages")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("conversation_id", conversationId)
+      .eq("direction", "inbound")
+      .order("line_event_timestamp", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (latestMessages.error || !latestMessages.data?.length) return null;
+    const messageIds = latestMessages.data.map((value) => String(value.id));
+    const tokens = await this.client
+      .from("line_message_read_tokens")
+      .select("message_id, mark_as_read_token")
+      .eq("organization_id", organizationId)
+      .in("message_id", messageIds);
+    if (tokens.error) return null;
+    const tokenByMessage = new Map((tokens.data || []).map((value) => [String(value.message_id), value.mark_as_read_token]));
+    for (const messageId of messageIds) {
+      const token = tokenByMessage.get(messageId);
+      if (typeof token === "string") return token;
+    }
+    return null;
+  }
+
   async updateConversation(organizationId: string, conversationId: string, _profileId: string, _role: InboxRole, update: ConversationUpdate): Promise<ConversationRecord> {
     const payload: Row = { updated_at: new Date().toISOString() };
     if (update.status) { payload.status = update.status; payload.closed_at = update.status === "closed" ? new Date().toISOString() : null; }

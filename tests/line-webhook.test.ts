@@ -8,6 +8,7 @@ import { processWebhookEvent, processWebhookEvents } from "../src/lib/webhook/pr
 import { MockWebhookStore } from "../src/lib/webhook/store";
 import { CONTROLLED_ENROLLMENT_REDACTED_TEXT } from "../src/lib/launch/controlled-recipient";
 import type { LineEvent } from "../src/lib/line/types";
+import { markLineChatAsRead } from "../src/lib/line/read";
 
 const secret = "test-channel-secret";
 const organizationId = "00000000-0000-4000-8000-000000000001";
@@ -121,6 +122,36 @@ describe("Mock webhook store integration", () => {
     expect(JSON.stringify(message?.payloadJson)).not.toContain("fixture message");
     expect(message?.payloadJson).toMatchObject({ hasText: false, controlledLaunchEnrollment: true });
     expect(notifications).toEqual([]);
+  });
+
+  it("stores the LINE read token outside the public message payload", async () => {
+    const store = new MockWebhookStore();
+    const source = eventFromFixture("text");
+    const event = { ...source, webhookEventId: "read-token-event", message: { ...source.message!, markAsReadToken: "secret-read-token" } };
+    await processWebhookEvent(event, store, { organizationId, profileClient });
+    const conversation = (await store.listConversations({ organizationId, profileId: "mock-user", filter: "all", page: 1, pageSize: 10 })).items[0]!.conversation;
+    expect(await store.getLatestLineMarkAsReadToken(organizationId, conversation.id)).toBe("secret-read-token");
+    const contact = (await store.listContacts({ page: 1, pageSize: 10 })).items[0]!;
+    expect(JSON.stringify(await store.listMessages(organizationId, contact.id))).not.toContain("secret-read-token");
+  });
+});
+
+describe("LINE mark-as-read", () => {
+  it("calls the token-based LINE endpoint without exposing the token in the result", async () => {
+    let requestBody = "";
+    const result = await markLineChatAsRead("read-token", { mode: "live", channelAccessToken: "access-token" }, async (url, init) => {
+      expect(String(url)).toBe("https://api.line.me/v2/bot/chat/markAsRead");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer access-token");
+      requestBody = String(init?.body);
+      return new Response(null, { status: 200 });
+    });
+    expect(JSON.parse(requestBody)).toEqual({ markAsReadToken: "read-token" });
+    expect(result).toEqual({ status: "marked", httpStatus: 200 });
+    expect(JSON.stringify(result)).not.toContain("read-token");
+  });
+
+  it("returns a safe failure for a rejected request", async () => {
+    expect(await markLineChatAsRead("read-token", { mode: "live", channelAccessToken: "access-token" }, async () => new Response(null, { status: 400 }))).toEqual({ status: "failed", httpStatus: 400 });
   });
 });
 

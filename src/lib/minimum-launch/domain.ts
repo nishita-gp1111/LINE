@@ -6,6 +6,13 @@ export type RichMenuRuleCandidate = {
   createdAt: string;
 };
 
+export type SurveyRichMenuCandidate = {
+  richMenuId: string | null;
+  status: string;
+  startedAt: string;
+  fallbackMinutes: number;
+};
+
 export function surveyResponseKey(sessionId: string, questionId: string): string {
   return `survey-response:${sessionId}:${questionId}`;
 }
@@ -63,4 +70,16 @@ export function selectRichMenuRule(activeTagIds: Iterable<string>, rules: RichMe
   return rules
     .filter((rule) => active.has(rule.tagId))
     .sort((left, right) => left.priority - right.priority || left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))[0] || null;
+}
+
+export function selectEligibleSurveyRichMenu(candidates: SurveyRichMenuCandidate[], now = new Date()): string | null {
+  const nowMs = now.getTime();
+  return candidates
+    .filter((candidate) => {
+      if (!candidate.richMenuId) return false;
+      if (candidate.status === "completed") return true;
+      const delay = Math.min(Math.max(Math.round(candidate.fallbackMinutes), 1), 1_440) * 60 * 1000;
+      return candidate.status === "active" && Date.parse(candidate.startedAt) + delay <= nowMs;
+    })
+    .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt))[0]?.richMenuId || null;
 }
