@@ -123,6 +123,7 @@ export type InboxStore = {
   listConversations(query: ConversationListQuery): Promise<{ items: ConversationListItem[]; total: number; page: number; pageSize: number }>;
   getConversation(organizationId: string, conversationId: string, profileId: string): Promise<ConversationDetail | null>;
   markConversationRead(organizationId: string, conversationId: string, profileId: string, lastMessageId?: string | null): Promise<ConversationReadState>;
+  getLatestLineMarkAsReadToken(organizationId: string, conversationId: string): Promise<string | null>;
   updateConversation(organizationId: string, conversationId: string, profileId: string, role: InboxRole, update: ConversationUpdate): Promise<ConversationRecord>;
   addNote(organizationId: string, conversationId: string, profileId: string, role: InboxRole, body: string): Promise<ConversationNote>;
   updateNote(organizationId: string, noteId: string, profileId: string, role: InboxRole, body: string): Promise<ConversationNote>;

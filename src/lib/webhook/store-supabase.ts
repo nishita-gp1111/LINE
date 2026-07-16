@@ -131,11 +131,31 @@ export class SupabaseWebhookStore implements WebhookStore {
       target_event_at: input.eventAt
     });
     if (error) throw new Error("受信メッセージ保存に失敗しました。");
+    let messageId = data ? String(data) : null;
+    if (!messageId && input.lineMessageId) {
+      const existing = await this.client
+        .from("messages")
+        .select("id")
+        .eq("organization_id", input.organizationId)
+        .eq("line_message_id", input.lineMessageId)
+        .maybeSingle();
+      messageId = existing.data?.id ? String(existing.data.id) : null;
+    }
+    if (!messageId) return { inserted: false };
+    if (input.lineMarkAsReadToken) {
+      const tokenResult = await this.client.from("line_message_read_tokens").upsert({
+        message_id: messageId,
+        organization_id: input.organizationId,
+        mark_as_read_token: input.lineMarkAsReadToken,
+        updated_at: new Date().toISOString()
+      }, { onConflict: "message_id" });
+      if (tokenResult.error) throw new Error("LINE既読トークンを安全に保存できませんでした。");
+    }
     if (!data) return { inserted: false };
     const { data: row, error: selectError } = await this.client
       .from("messages")
       .select("*")
-      .eq("id", data as string)
+      .eq("id", messageId)
       .single();
     if (selectError || !row) return { inserted: false };
     return { inserted: true, message: mapMessage(row as MessageRow) };

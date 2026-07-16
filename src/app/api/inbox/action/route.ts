@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getInboxAuthContext, isTrustedOrigin } from "@/lib/inbox/auth";
 import { inboxActionSchema } from "@/lib/inbox/schemas";
 import { getInboxStore } from "@/lib/inbox/store";
+import { getServerEnv } from "@/lib/env/server";
+import { markLineChatAsRead } from "@/lib/line/read";
 
 export const runtime = "nodejs";
 
@@ -16,8 +18,13 @@ export async function POST(request: Request) {
   try {
     if (parsed.data.action === "read") {
       const state = await store.markConversationRead(auth.organizationId, parsed.data.conversationId, auth.profileId, parsed.data.lastMessageId);
-      await store.recordAudit({ organizationId: auth.organizationId, actorProfileId: auth.profileId, action: "conversation.read", resourceType: "conversation", resourceId: parsed.data.conversationId });
-      return NextResponse.json({ ok: true, readState: state });
+      const markAsReadToken = await store.getLatestLineMarkAsReadToken(auth.organizationId, parsed.data.conversationId);
+      const env = getServerEnv();
+      const lineRead = markAsReadToken
+        ? await markLineChatAsRead(markAsReadToken, { mode: env.MOCK_LINE_API ? "mock" : "live", channelAccessToken: env.LINE_CHANNEL_ACCESS_TOKEN })
+        : { status: "no_token" as const };
+      await store.recordAudit({ organizationId: auth.organizationId, actorProfileId: auth.profileId, action: "conversation.read", resourceType: "conversation", resourceId: parsed.data.conversationId, metadata: { lineReadStatus: lineRead.status } });
+      return NextResponse.json({ ok: true, readState: state, lineRead: { status: lineRead.status } });
     }
     if (parsed.data.action === "update") {
       if (auth.role === "viewer") return NextResponse.json({ ok: false, error: "権限がありません。" }, { status: 403 });

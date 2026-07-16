@@ -15,7 +15,7 @@ import { createOpaquePostbackToken, verifyOpaquePostbackToken } from "@/lib/mile
 import { SupabaseInboxStore } from "@/lib/inbox/store-supabase";
 import { sendInboxTextMessage } from "@/lib/inbox/send-service";
 import type { MessageRecord } from "@/lib/webhook/store";
-import { followSurveyClientRequestId, parseSurveyPostbackData, selectRichMenuRule, surveyCompletionClientRequestId, surveyGreetingClientRequestId, surveyPostbackData, surveyQuestionClientRequestId, surveyResponseKey, surveyRichMenuJobKey, surveyRichMenuRunAt, type RichMenuRuleCandidate } from "@/lib/minimum-launch/domain";
+import { followSurveyClientRequestId, parseSurveyPostbackData, selectEligibleSurveyRichMenu, selectRichMenuRule, surveyCompletionClientRequestId, surveyGreetingClientRequestId, surveyPostbackData, surveyQuestionClientRequestId, surveyResponseKey, surveyRichMenuJobKey, surveyRichMenuRunAt, type RichMenuRuleCandidate, type SurveyRichMenuCandidate } from "@/lib/minimum-launch/domain";
 import { validateRichMenuImage } from "@/lib/minimum-launch/rich-menu-image";
 import { RICH_MENU_OPENS_BY_DEFAULT, scaleRichMenuLayout, type RichMenuActionInput } from "@/lib/minimum-launch/rich-menu-layouts";
 import { buildSurveyCompletionMessage, buildSurveyGreetingMessage, buildSurveyQuestionMessage, type LineFlexMessage } from "@/lib/minimum-launch/survey-flex-message";
@@ -969,6 +969,36 @@ export async function restoreLiveRichMenu(input: { client: SupabaseClient; organ
   return previous;
 }
 
+async function eligibleSurveyRichMenuId(client: SupabaseClient, organizationId: string, contactId: string): Promise<string | null> {
+  const sessions = await client
+    .from("survey_sessions")
+    .select("survey_id, status, started_at")
+    .eq("organization_id", organizationId)
+    .eq("contact_id", contactId)
+    .in("status", ["active", "completed"])
+    .order("started_at", { ascending: false })
+    .limit(20);
+  if (sessions.error || !sessions.data?.length) return null;
+  const surveyIds = [...new Set(sessions.data.map((value) => String(row(value).survey_id)))];
+  const surveys = await client.from("surveys").select("id, settings_json").eq("organization_id", organizationId).in("id", surveyIds);
+  if (surveys.error) return null;
+  const settingsBySurvey = new Map((surveys.data || []).map((value) => [String(row(value).id), row(row(value).settings_json)]));
+  const candidates: SurveyRichMenuCandidate[] = sessions.data.map((value) => {
+    const session = row(value);
+    const settings = settingsBySurvey.get(String(session.survey_id)) || {};
+    return {
+      richMenuId: typeof settings.postSurveyRichMenuId === "string" ? settings.postSurveyRichMenuId : null,
+      status: String(session.status),
+      startedAt: String(session.started_at),
+      fallbackMinutes: typeof settings.richMenuFallbackMinutes === "number" ? settings.richMenuFallbackMinutes : 30
+    };
+  });
+  const selected = selectEligibleSurveyRichMenu(candidates);
+  if (!selected) return null;
+  const menu = await client.from("rich_menus").select("id").eq("organization_id", organizationId).eq("id", selected).eq("status", "active").maybeSingle();
+  return menu.data?.id ? String(menu.data.id) : null;
+}
+
 export async function reconcileContactRichMenu(input: { client: SupabaseClient; organizationId: string; contactId: string }): Promise<RichMenuSync> {
   if (!isLaunchFlagEnabled("LINE_RICH_MENU_MUTATION_ENABLED")) return "disabled";
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
@@ -987,8 +1017,14 @@ export async function reconcileContactRichMenu(input: { client: SupabaseClient; 
     const linked = await linkLiveRichMenu({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, richMenuId: desired.richMenuId });
     return linked.unchanged ? "unchanged" : "linked";
   }
-  const { data: existing } = await input.client.from("rich_menu_assignments").select("status").eq("organization_id", input.organizationId).eq("contact_id", input.contactId).maybeSingle();
+  const surveyRichMenuId = await eligibleSurveyRichMenuId(input.client, input.organizationId, input.contactId);
+  if (surveyRichMenuId) {
+    const linked = await linkLiveRichMenu({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, richMenuId: surveyRichMenuId, sourceType: "survey" });
+    return linked.unchanged ? "unchanged" : "linked";
+  }
+  const { data: existing } = await input.client.from("rich_menu_assignments").select("status, source_type").eq("organization_id", input.organizationId).eq("contact_id", input.contactId).maybeSingle();
   if (!existing || row(existing).status === "removed") return "not_configured";
+  if (row(existing).source_type === "survey") return "unchanged";
   await restoreLiveRichMenu({ client: input.client, organizationId: input.organizationId, contactId: input.contactId });
   return "restored";
 }

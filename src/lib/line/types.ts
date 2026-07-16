@@ -13,7 +13,8 @@ const lineMessageSchema = z
   .object({
     id: z.string().min(1),
     type: z.string().min(1),
-    text: z.string().optional()
+    text: z.string().optional(),
+    markAsReadToken: z.string().min(1).optional()
   })
   .passthrough();
 

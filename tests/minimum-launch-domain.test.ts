@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignmentEffectMetadata, followSurveyClientRequestId, parseSurveyPostbackData, selectRichMenuRule, shouldRunTagAddedEffects, surveyCompletionClientRequestId, surveyGreetingClientRequestId, surveyPostbackData, surveyQuestionClientRequestId, surveyResponseKey, surveyRichMenuJobKey, surveyRichMenuRunAt } from "@/lib/minimum-launch/domain";
+import { assignmentEffectMetadata, followSurveyClientRequestId, parseSurveyPostbackData, selectEligibleSurveyRichMenu, selectRichMenuRule, shouldRunTagAddedEffects, surveyCompletionClientRequestId, surveyGreetingClientRequestId, surveyPostbackData, surveyQuestionClientRequestId, surveyResponseKey, surveyRichMenuJobKey, surveyRichMenuRunAt } from "@/lib/minimum-launch/domain";
 import { validateRichMenuImage } from "@/lib/minimum-launch/rich-menu-image";
 
 function png(width: number, height: number): Uint8Array {
@@ -51,6 +51,19 @@ describe("minimum internal launch domain", () => {
     ];
     expect(selectRichMenuRule(["tag-a", "tag-b"], rules)?.richMenuId).toBe("menu-a");
     expect(selectRichMenuRule(["tag-c"], rules)).toBeNull();
+  });
+
+  it("keeps the survey menu after completion and enables it after the fallback delay", () => {
+    const now = new Date("2026-07-16T01:00:00.000Z");
+    expect(selectEligibleSurveyRichMenu([
+      { richMenuId: "menu-complete", status: "completed", startedAt: "2026-07-16T00:59:00.000Z", fallbackMinutes: 30 }
+    ], now)).toBe("menu-complete");
+    expect(selectEligibleSurveyRichMenu([
+      { richMenuId: "menu-active", status: "active", startedAt: "2026-07-16T00:29:00.000Z", fallbackMinutes: 30 }
+    ], now)).toBe("menu-active");
+    expect(selectEligibleSurveyRichMenu([
+      { richMenuId: "menu-active", status: "active", startedAt: "2026-07-16T00:31:00.000Z", fallbackMinutes: 30 }
+    ], now)).toBeNull();
   });
 });
 
