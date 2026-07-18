@@ -36,10 +36,19 @@ export function acquisitionRouteByMessage(value: string): AcquisitionRoute | nul
   return ACQUISITION_ROUTES.find((route) => normalizeMessage(route.registrationMessage) === normalized) || null;
 }
 
-export function buildLineAcquisitionUrl(basicId: string, route: AcquisitionRoute): string {
+function normalizeBasicId(basicId: string): string {
   const normalizedId = basicId.normalize("NFKC").trim();
   if (!/^@[A-Za-z0-9._-]{1,100}$/.test(normalizedId)) {
     throw new Error("LINE公式アカウントのBasic IDが不正です。");
   }
+  return normalizedId;
+}
+
+export function buildLineAcquisitionUrl(basicId: string, route: AcquisitionRoute): string {
+  const normalizedId = normalizeBasicId(basicId);
   return `https://line.me/R/oaMessage/${encodeURIComponent(normalizedId)}/?${encodeURIComponent(route.registrationMessage)}`;
+}
+
+export function buildLineFriendUrl(basicId: string): string {
+  return `https://line.me/R/ti/p/${encodeURIComponent(normalizeBasicId(basicId))}`;
 }
