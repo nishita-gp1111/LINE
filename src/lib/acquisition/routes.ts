@@ -1,0 +1,45 @@
+export type AcquisitionRoute = {
+  slug: "meeting" | "survey";
+  label: string;
+  tagName: string;
+  registrationMessage: string;
+  description: string;
+};
+
+export const ACQUISITION_ROUTES: readonly AcquisitionRoute[] = [
+  {
+    slug: "meeting",
+    label: "面談から流入",
+    tagName: "面談から流入",
+    registrationMessage: "面談経由で友だち追加しました",
+    description: "面談後に案内する友だち追加URLです。"
+  },
+  {
+    slug: "survey",
+    label: "アンケート経由",
+    tagName: "アンケート経由",
+    registrationMessage: "アンケート経由で友だち追加しました",
+    description: "外部アンケートの完了画面などに設置する友だち追加URLです。"
+  }
+] as const;
+
+function normalizeMessage(value: string): string {
+  return value.normalize("NFKC").replace(/\s+/g, " ").trim();
+}
+
+export function acquisitionRouteBySlug(value: string): AcquisitionRoute | null {
+  return ACQUISITION_ROUTES.find((route) => route.slug === value) || null;
+}
+
+export function acquisitionRouteByMessage(value: string): AcquisitionRoute | null {
+  const normalized = normalizeMessage(value);
+  return ACQUISITION_ROUTES.find((route) => normalizeMessage(route.registrationMessage) === normalized) || null;
+}
+
+export function buildLineAcquisitionUrl(basicId: string, route: AcquisitionRoute): string {
+  const normalizedId = basicId.normalize("NFKC").trim();
+  if (!/^@[A-Za-z0-9._-]{1,100}$/.test(normalizedId)) {
+    throw new Error("LINE公式アカウントのBasic IDが不正です。");
+  }
+  return `https://line.me/R/oaMessage/${encodeURIComponent(normalizedId)}/?${encodeURIComponent(route.registrationMessage)}`;
+}

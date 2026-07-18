@@ -18,7 +18,8 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { href: "/admin/inbox", label: "1対1トーク", description: "会話・返信・顧客情報", icon: "💬" },
       { href: "/admin/contacts", label: "顧客一覧", description: "友だちと履歴", icon: "👥" },
-      { href: "/admin/tags", label: "タグ管理", description: "分類ラベルを作成", icon: "🏷" }
+      { href: "/admin/tags", label: "タグ管理", description: "分類ラベルを作成", icon: "🏷" },
+      { href: "/admin/acquisition", label: "流入経路URL", description: "追加元ごとにタグ付与", icon: "↗" }
     ]
   },
   {
