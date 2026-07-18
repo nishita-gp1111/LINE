@@ -4,7 +4,8 @@ import {
   acquisitionRouteByMessage,
   acquisitionRouteBySlug,
   buildLineAcquisitionUrl,
-  buildLineFriendUrl
+  buildLineFriendUrl,
+  buildLineLiffAcquisitionUrl
 } from "@/lib/acquisition/routes";
 
 describe("acquisition source links", () => {
@@ -36,5 +37,15 @@ describe("acquisition source links", () => {
   it("builds the official account profile URL used as the browser fallback", () => {
     expect(buildLineFriendUrl(" @612evfuv ")).toBe("https://line.me/R/ti/p/%40612evfuv");
     expect(() => buildLineFriendUrl("612evfuv")).toThrow("Basic ID");
+  });
+
+  it("builds a LIFF permanent URL with an allowlisted acquisition source", () => {
+    const route = acquisitionRouteBySlug("survey");
+    if (!route) throw new Error("route missing");
+    const url = new URL(buildLineLiffAcquisitionUrl("2000000000-AbCdEf12", route));
+    expect(url.origin).toBe("https://liff.line.me");
+    expect(url.pathname).toBe("/2000000000-AbCdEf12/");
+    expect(url.searchParams.get("source")).toBe("survey");
+    expect(() => buildLineLiffAcquisitionUrl("bad/id?token=secret", route)).toThrow("LIFF ID");
   });
 });

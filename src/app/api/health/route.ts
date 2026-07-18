@@ -44,6 +44,17 @@ export async function GET() {
       lineChannelSecret: Boolean(env.LINE_CHANNEL_SECRET),
       lineChannelAccessToken: Boolean(env.LINE_CHANNEL_ACCESS_TOKEN),
       expectedLineAccount: Boolean(env.LINE_EXPECTED_BASIC_ID && env.LINE_EXPECTED_DISPLAY_NAME),
+      liffId: Boolean(env.NEXT_PUBLIC_LIFF_ID),
+      lineLoginChannelId: Boolean(env.LINE_LOGIN_CHANNEL_ID),
+      lineLoginChannelSecret: Boolean(env.LINE_LOGIN_CHANNEL_SECRET),
+      acquisitionAutoTagging: Boolean(
+        env.NEXT_PUBLIC_LIFF_ID &&
+        env.LINE_LOGIN_CHANNEL_ID &&
+        env.LINE_CHANNEL_ACCESS_TOKEN &&
+        env.LINE_ORGANIZATION_ID &&
+        env.NEXT_PUBLIC_SUPABASE_URL &&
+        env.SUPABASE_SERVICE_ROLE_KEY
+      ),
       surveyPostbackSecret: Boolean(env.SURVEY_POSTBACK_TOKEN_SECRET && env.SURVEY_POSTBACK_TOKEN_SECRET.length >= 32),
       controlledRecipientDatabase,
       controlledEnrollmentEnabled: env.LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED,
