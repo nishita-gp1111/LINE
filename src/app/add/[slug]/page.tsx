@@ -4,7 +4,8 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   acquisitionRouteBySlug,
   buildLineAcquisitionUrl,
-  buildLineFriendUrl
+  buildLineFriendUrl,
+  buildLineLiffAcquisitionUrl
 } from "@/lib/acquisition/routes";
 import { getServerEnv } from "@/lib/env/server";
 
@@ -24,16 +25,30 @@ export default async function AcquisitionLandingPage({ params }: { params: Promi
   const route = acquisitionRouteBySlug(slug);
   if (!route) notFound();
 
-  const basicId = getServerEnv().LINE_EXPECTED_BASIC_ID;
+  const env = getServerEnv();
+  const basicId = env.LINE_EXPECTED_BASIC_ID;
   if (!basicId) {
     return <UnavailablePage />;
   }
 
   let messageUrl: string;
   let friendUrl: string;
+  let primaryUrl: string;
+  let automaticTagging = false;
   try {
     messageUrl = buildLineAcquisitionUrl(basicId, route);
     friendUrl = buildLineFriendUrl(basicId);
+    automaticTagging = Boolean(
+      env.NEXT_PUBLIC_LIFF_ID &&
+      env.LINE_LOGIN_CHANNEL_ID &&
+      env.LINE_CHANNEL_ACCESS_TOKEN &&
+      env.LINE_ORGANIZATION_ID &&
+      env.NEXT_PUBLIC_SUPABASE_URL &&
+      env.SUPABASE_SERVICE_ROLE_KEY
+    );
+    primaryUrl = automaticTagging
+      ? buildLineLiffAcquisitionUrl(env.NEXT_PUBLIC_LIFF_ID || "", route)
+      : messageUrl;
   } catch {
     return <UnavailablePage />;
   }
@@ -49,7 +64,7 @@ export default async function AcquisitionLandingPage({ params }: { params: Promi
           </div>
           <p className="mt-4 text-xs font-bold tracking-[0.18em] text-white/80">GP PRモニター窓口</p>
           <h1 className="mt-2 text-2xl font-black tracking-tight">LINEで続きを受け取る</h1>
-          <p className="mt-3 text-sm font-medium leading-6 text-white/90">下のボタンを押すと、LINEアプリが開きます。</p>
+          <p className="mt-3 text-sm font-medium leading-6 text-white/90">下のボタンから、友だち追加とご案内登録を進めます。</p>
         </div>
 
         <div className="md:grid md:grid-cols-[minmax(0,1fr)_280px]">
@@ -57,11 +72,15 @@ export default async function AcquisitionLandingPage({ params }: { params: Promi
             <ol className="space-y-3" aria-label="友だち追加の手順">
               <Step number="1" title="LINEアプリを開く" detail="下の緑色のボタンをタップします。" />
               <Step number="2" title="友だち追加する" detail="表示されたGP PRモニター窓口を追加します。" />
-              <Step number="3" title="入力済みメッセージを送る" detail="送信すると、ご案内内容をあなたに合わせられます。" />
+              <Step
+                number="3"
+                title={automaticTagging ? "そのまま登録完了" : "入力済みメッセージを送る"}
+                detail={automaticTagging ? "友だち追加を確認後、ご案内経路を自動で登録します。" : "送信すると、ご案内内容をあなたに合わせられます。"}
+              />
             </ol>
 
             <a
-              href={messageUrl}
+              href={primaryUrl}
               className="focus-ring mt-6 flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[#06c755] px-5 py-4 text-base font-black text-white shadow-lg shadow-emerald-600/20 transition hover:bg-[#05b94f] active:translate-y-px"
             >
               <svg viewBox="0 0 24 24" className="size-6 fill-current" aria-hidden="true">
@@ -86,16 +105,20 @@ export default async function AcquisitionLandingPage({ params }: { params: Promi
               </div>
             </details>
 
-            <p className="mt-5 text-center text-[11px] leading-5 text-slate-400">このページではLINEの認証情報や個人情報を取得しません。</p>
+            <p className="mt-5 text-center text-[11px] leading-5 text-slate-400">
+              {automaticTagging
+                ? "LINEの認証情報は、友だち状態と登録先を安全に確認するためだけに使用します。"
+                : "予備方式では、送信された経路メッセージから登録先を確認します。"}
+            </p>
           </div>
 
           <aside className="hidden border-l border-emerald-900/10 bg-emerald-50/70 px-7 py-8 text-center md:flex md:flex-col md:items-center md:justify-center" aria-label="パソコン用QRコード">
             <span className="rounded-full bg-emerald-700 px-3 py-1 text-[10px] font-black tracking-[0.12em] text-white">パソコンで閲覧中の方</span>
             <h2 className="mt-4 text-xl font-black tracking-tight">スマホで読み取る</h2>
             <p className="mt-2 text-xs font-medium leading-5 text-slate-500">カメラをかざすと、LINEアプリが開きます。</p>
-            <div className="mt-5 rounded-2xl border border-emerald-900/10 bg-white p-3 shadow-sm" data-qr-destination={messageUrl}>
+            <div className="mt-5 rounded-2xl border border-emerald-900/10 bg-white p-3 shadow-sm" data-qr-destination={primaryUrl}>
               <QRCodeSVG
-                value={messageUrl}
+                value={primaryUrl}
                 size={200}
                 level="M"
                 bgColor="#ffffff"
@@ -103,8 +126,8 @@ export default async function AcquisitionLandingPage({ params }: { params: Promi
                 title={`${route.label}のLINE友だち追加QRコード`}
               />
             </div>
-            <p className="mt-4 text-xs font-black text-emerald-800">読み取り → 友だち追加 → 送信</p>
-            <p className="mt-2 text-[11px] leading-5 text-slate-400">送信画面には流入確認メッセージが入力されています。</p>
+            <p className="mt-4 text-xs font-black text-emerald-800">{automaticTagging ? "読み取り → 友だち追加 → 登録完了" : "読み取り → 友だち追加 → 送信"}</p>
+            <p className="mt-2 text-[11px] leading-5 text-slate-400">{automaticTagging ? "メッセージ送信なしで経路タグを反映します。" : "送信画面には流入確認メッセージが入力されています。"}</p>
           </aside>
         </div>
       </section>

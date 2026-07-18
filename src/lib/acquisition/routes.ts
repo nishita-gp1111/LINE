@@ -52,3 +52,18 @@ export function buildLineAcquisitionUrl(basicId: string, route: AcquisitionRoute
 export function buildLineFriendUrl(basicId: string): string {
   return `https://line.me/R/ti/p/${encodeURIComponent(normalizeBasicId(basicId))}`;
 }
+
+function normalizeLiffId(liffId: string): string {
+  const normalizedId = liffId.normalize("NFKC").trim();
+  if (!/^[A-Za-z0-9_-]{5,100}$/.test(normalizedId)) {
+    throw new Error("LIFF IDが不正です。");
+  }
+  return normalizedId;
+}
+
+export function buildLineLiffAcquisitionUrl(liffId: string, route: AcquisitionRoute): string {
+  const normalizedId = normalizeLiffId(liffId);
+  const url = new URL(`https://liff.line.me/${encodeURIComponent(normalizedId)}/`);
+  url.searchParams.set("source", route.slug);
+  return url.toString();
+}

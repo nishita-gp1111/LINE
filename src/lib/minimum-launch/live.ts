@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { acquisitionRouteByMessage } from "@/lib/acquisition/routes";
+import { acquisitionRouteByMessage, acquisitionRouteBySlug, type AcquisitionRoute } from "@/lib/acquisition/routes";
 import { getServerEnv } from "@/lib/env/server";
 import {
   assertControlledRecipient,
@@ -203,10 +203,8 @@ export async function assignLiveTag(input: { client: SupabaseClient; organizatio
   return { assignment: row(assignment), duplicate: result.duplicate === true, effectiveAdded, automation, richMenu };
 }
 
-export async function applyLiveAcquisitionRouteTag(input: { client: SupabaseClient; organizationId: string; contactId: string; text: string }): Promise<{ matched: boolean; slug?: string; tagName?: string; duplicate?: boolean }> {
-  const route = acquisitionRouteByMessage(input.text);
-  if (!route) return { matched: false };
-
+async function applyAcquisitionRoute(input: { client: SupabaseClient; organizationId: string; contactId: string; route: AcquisitionRoute }): Promise<{ matched: true; slug: string; tagName: string; duplicate: boolean }> {
+  const route = input.route;
   const profileId = await systemProfileId(input.client, input.organizationId);
   const existing = await input.client.from("tags").select("id, name").eq("organization_id", input.organizationId).eq("name", route.tagName).eq("is_active", true).maybeSingle();
   if (existing.error) throw new Error("流入経路タグを取得できませんでした。");
@@ -236,6 +234,18 @@ export async function applyLiveAcquisitionRouteTag(input: { client: SupabaseClie
     actorProfileId: profileId
   });
   return { matched: true, slug: route.slug, tagName: route.tagName, duplicate: result.duplicate };
+}
+
+export async function applyLiveAcquisitionRouteTag(input: { client: SupabaseClient; organizationId: string; contactId: string; text: string }): Promise<{ matched: boolean; slug?: string; tagName?: string; duplicate?: boolean }> {
+  const route = acquisitionRouteByMessage(input.text);
+  if (!route) return { matched: false };
+  return applyAcquisitionRoute({ ...input, route });
+}
+
+export async function applyLiveAcquisitionRouteTagBySlug(input: { client: SupabaseClient; organizationId: string; contactId: string; slug: string }): Promise<{ matched: boolean; slug?: string; tagName?: string; duplicate?: boolean }> {
+  const route = acquisitionRouteBySlug(input.slug);
+  if (!route) return { matched: false };
+  return applyAcquisitionRoute({ ...input, route });
 }
 
 export async function removeLiveTag(input: { client: SupabaseClient; organizationId: string; assignmentId: string; profileId: string }): Promise<Row> {
