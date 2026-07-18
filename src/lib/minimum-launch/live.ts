@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { acquisitionRouteByMessage } from "@/lib/acquisition/routes";
 import { getServerEnv } from "@/lib/env/server";
 import {
   assertControlledRecipient,
@@ -178,7 +179,7 @@ export async function createLiveTag(input: { client: SupabaseClient; organizatio
   return row(data);
 }
 
-export async function assignLiveTag(input: { client: SupabaseClient; organizationId: string; contactId: string; tagId: string; sourceType: "manual" | "survey"; sourceId?: string | null; actorProfileId: string }): Promise<{ assignment: Row; duplicate: boolean; effectiveAdded: boolean; automation: string; richMenu: RichMenuSync }> {
+export async function assignLiveTag(input: { client: SupabaseClient; organizationId: string; contactId: string; tagId: string; sourceType: "manual" | "survey" | "system"; sourceId?: string | null; actorProfileId: string }): Promise<{ assignment: Row; duplicate: boolean; effectiveAdded: boolean; automation: string; richMenu: RichMenuSync }> {
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
   await assertControlledRecipient(input.client, input.organizationId, String(contact.line_user_id));
   const assignmentKey = activeTagAssignmentKey(input.contactId, input.tagId, input.sourceType, input.sourceId || null);
@@ -200,6 +201,41 @@ export async function assignLiveTag(input: { client: SupabaseClient; organizatio
   const automation = effectiveAdded ? await runTagAddedAutomation({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, tagId: input.tagId, assignmentId }) : "not_triggered";
   const richMenu = await reconcileContactRichMenu({ client: input.client, organizationId: input.organizationId, contactId: input.contactId });
   return { assignment: row(assignment), duplicate: result.duplicate === true, effectiveAdded, automation, richMenu };
+}
+
+export async function applyLiveAcquisitionRouteTag(input: { client: SupabaseClient; organizationId: string; contactId: string; text: string }): Promise<{ matched: boolean; slug?: string; tagName?: string; duplicate?: boolean }> {
+  const route = acquisitionRouteByMessage(input.text);
+  if (!route) return { matched: false };
+
+  const profileId = await systemProfileId(input.client, input.organizationId);
+  const existing = await input.client.from("tags").select("id, name").eq("organization_id", input.organizationId).eq("name", route.tagName).eq("is_active", true).maybeSingle();
+  if (existing.error) throw new Error("流入経路タグを取得できませんでした。");
+
+  let tagId = existing.data?.id ? String(existing.data.id) : "";
+  if (!tagId) {
+    const parsed = tagDefinitionSchema.parse({ name: route.tagName, description: `${route.label}の自動流入タグ`, colorToken: "teal", tagGroupId: null, isExclusive: false });
+    const created = await input.client.from("tags").insert({ organization_id: input.organizationId, name: parsed.name, description: parsed.description, color_token: parsed.colorToken, tag_group_id: null, is_active: true, created_by_profile_id: profileId }).select("id").single();
+    if (created.error && isUniqueViolation(created.error)) {
+      const retry = await input.client.from("tags").select("id").eq("organization_id", input.organizationId).eq("name", route.tagName).eq("is_active", true).maybeSingle();
+      if (retry.error || !retry.data) throw new Error("流入経路タグを準備できませんでした。");
+      tagId = String(retry.data.id);
+    } else if (created.error || !created.data) {
+      throw new Error("流入経路タグを準備できませんでした。");
+    } else {
+      tagId = String(created.data.id);
+    }
+  }
+
+  const result = await assignLiveTag({
+    client: input.client,
+    organizationId: input.organizationId,
+    contactId: input.contactId,
+    tagId,
+    sourceType: "system",
+    sourceId: `acquisition:${route.slug}`,
+    actorProfileId: profileId
+  });
+  return { matched: true, slug: route.slug, tagName: route.tagName, duplicate: result.duplicate };
 }
 
 export async function removeLiveTag(input: { client: SupabaseClient; organizationId: string; assignmentId: string; profileId: string }): Promise<Row> {

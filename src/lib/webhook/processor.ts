@@ -7,7 +7,7 @@ import {
   tryEnrollControlledRecipient,
   type ControlledEnrollmentResult
 } from "@/lib/launch/controlled-recipient";
-import { handleLiveSurveyPostback, sendFollowSurveyIfConfigured } from "@/lib/minimum-launch/live";
+import { applyLiveAcquisitionRouteTag, handleLiveSurveyPostback, sendFollowSurveyIfConfigured } from "@/lib/minimum-launch/live";
 import type { InboundEmailNotificationInput } from "@/lib/notifications/inbound-email";
 import type { ApplyContactInput, WebhookStore } from "@/lib/webhook/store";
 
@@ -19,11 +19,19 @@ type ControlledRecipientEnrollment = (input: {
   message?: string | null;
 }) => Promise<ControlledEnrollmentResult>;
 
+type AcquisitionRouteTagging = (input: {
+  organizationId: string;
+  contactId: string;
+  text: string;
+  webhookEventId: string;
+}) => Promise<{ matched: boolean }>;
+
 export type ProcessContext = {
   organizationId: string;
   profileClient: LineProfileClient;
   minimumLaunchClient?: SupabaseClient;
   controlledRecipientEnrollment?: ControlledRecipientEnrollment;
+  acquisitionRouteTagging?: AcquisitionRouteTagging;
   onInboundMessage?: (input: InboundEmailNotificationInput) => void;
 };
 
@@ -131,6 +139,15 @@ export async function processWebhookEvent(
           ...enrollmentInput
         });
       }
+      let acquisition = { matched: false };
+      const inboundText = event.message.type === "text" ? event.message.text || null : null;
+      if (!enrollment.matched && inboundText) {
+        if (context.acquisitionRouteTagging) {
+          acquisition = await context.acquisitionRouteTagging({ organizationId: context.organizationId, contactId: contact.id, text: inboundText, webhookEventId: event.webhookEventId });
+        } else if (context.minimumLaunchClient) {
+          acquisition = await applyLiveAcquisitionRouteTag({ client: context.minimumLaunchClient, organizationId: context.organizationId, contactId: contact.id, text: inboundText });
+        }
+      }
       const inserted = await store.insertInboundMessage({
         organizationId: context.organizationId,
         contactId: contact.id,
@@ -149,7 +166,7 @@ export async function processWebhookEvent(
       if (inserted.inserted && inserted.message && store.ensureConversationForContact) {
         const conversation = await store.ensureConversationForContact(context.organizationId, contact.id, eventAt(event), inserted.message);
         if (store.incrementUnreadForInbound) await store.incrementUnreadForInbound(context.organizationId, conversation.id, inserted.message.id);
-        if (!enrollment.matched && context.onInboundMessage) {
+        if (!enrollment.matched && !acquisition.matched && context.onInboundMessage) {
           try {
             context.onInboundMessage({
               organizationId: context.organizationId,

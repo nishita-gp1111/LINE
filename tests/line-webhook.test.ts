@@ -99,6 +99,35 @@ describe("Mock webhook store integration", () => {
     expect(notifications[0]?.conversationId).toMatch(/^mock-conversation-/);
   });
 
+  it("assigns an acquisition tag once and suppresses the housekeeping email notification", async () => {
+    const store = new MockWebhookStore();
+    const tagging: Array<{ contactId: string; text: string; webhookEventId: string }> = [];
+    const notifications: string[] = [];
+    const source = eventFromFixture("text");
+    const event = {
+      ...source,
+      webhookEventId: "acquisition-meeting-event",
+      message: { ...source.message!, id: "Macquisition001", text: "面談経由で友だち追加しました" }
+    };
+    const context = {
+      organizationId,
+      profileClient,
+      acquisitionRouteTagging: async (input: { contactId: string; text: string; webhookEventId: string }) => {
+        tagging.push(input);
+        return { matched: true };
+      },
+      onInboundMessage: (input: { messageId: string }) => notifications.push(input.messageId)
+    };
+
+    expect(await processWebhookEvent(event, store, context)).toBe("processed");
+    expect(await processWebhookEvent(event, store, context)).toBe("duplicate");
+    expect(tagging).toHaveLength(1);
+    expect(tagging[0]).toMatchObject({ text: "面談経由で友だち追加しました", webhookEventId: "acquisition-meeting-event" });
+    expect(notifications).toEqual([]);
+    const contact = (await store.listContacts({ page: 1, pageSize: 10 })).items[0]!;
+    expect((await store.listMessages(organizationId, contact.id))[0]?.textContent).toBe("面談経由で友だち追加しました");
+  });
+
   it("enrolls from the signed text event without retaining the one-time phrase", async () => {
     const store = new MockWebhookStore();
     const enrollmentInputs: Array<{ lineUserId: string; message?: string | null }> = [];
