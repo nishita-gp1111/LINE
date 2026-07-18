@@ -23,13 +23,13 @@ export function AcquisitionLinksClient({ appUrl }: { appUrl: string }) {
         <div className="rounded-2xl bg-gradient-to-br from-emerald-700 to-teal-600 px-6 py-7 text-white shadow-lg sm:px-8">
           <span className="rounded-full bg-white/15 px-3 py-1 text-[10px] font-black tracking-wide">FRIEND ACQUISITION</span>
           <h1 className="mt-4 text-3xl font-black tracking-tight">流入経路が分かる友だち追加URL</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-7 text-white/80">URLごとに入力済みメッセージを変え、受信した顧客へ経路タグを自動付与します。同じ経路メッセージを再送してもタグは重複しません。</p>
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-white/80">URLごとに専用の案内ページを表示し、LINEで送られた経路メッセージから顧客へタグを自動付与します。Googleフォームなど外部ブラウザーからでも利用できます。</p>
         </div>
 
         <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-950">
           <p className="font-black">お客様側の流れ</p>
           <ol className="mt-3 grid gap-2 sm:grid-cols-4">
-            {["URLをタップ", "LINEで友だち追加", "入力済み文面を送信", "経路タグが自動付与"].map((item, index) => <li key={item} className="flex items-center gap-2 rounded-xl bg-white/75 px-3 py-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-amber-500 text-xs font-black text-white">{index + 1}</span><span className="text-xs font-bold">{item}</span></li>)}
+            {["URLをタップ", "LINEを開いて友だち追加", "入力済み文面を送信", "経路タグが自動付与"].map((item, index) => <li key={item} className="flex items-center gap-2 rounded-xl bg-white/75 px-3 py-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-amber-500 text-xs font-black text-white">{index + 1}</span><span className="text-xs font-bold">{item}</span></li>)}
           </ol>
           <p className="mt-3 text-xs leading-5 text-amber-800">LINEの通常の友だち追加イベントには流入元URLが含まれないため、追加後に入力済みメッセージを1回送信すると個人別の経路を確定します。</p>
         </section>
