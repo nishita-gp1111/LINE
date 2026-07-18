@@ -134,7 +134,7 @@ Productionでは次の固定URLを使用します。
 - 面談から流入: `https://line-gp-1111.vercel.app/add/meeting`
 - アンケート経由: `https://line-gp-1111.vercel.app/add/survey`
 
-LINE Messaging APIの通常のfollowイベントには、どの友だち追加URLを経由したかを個人単位で示す値がありません。そのため各URLは、LINEアプリを開くボタンとブラウザー向けの予備導線を備えた専用案内ページを表示します。HTTPリダイレクトだけでアプリを自動起動せず、利用者のボタン操作から公式の`https://line.me/R/` URL Schemeを直接開くため、Googleフォーム、Chrome、Safariから利用できます。利用者が友だち追加後に入力済みの経路文面を1回送信した時点で、顧客と流入経路を決定的に紐付けます。経路登録メッセージはInboxへ保存しますが、新着メール通知の対象からは除外します。
+LINE Messaging APIの通常のfollowイベントには、どの友だち追加URLを経由したかを個人単位で示す値がありません。そのため各URLは、LINEアプリを開くボタンとブラウザー向けの予備導線を備えた専用案内ページを表示します。HTTPリダイレクトだけでアプリを自動起動せず、利用者のボタン操作から公式の`https://line.me/R/` URL Schemeを直接開くため、Googleフォーム、Chrome、Safariから利用できます。PC幅では同じ経路メッセージ入りLINE URLをQRコードでも表示し、スマートフォンで読み取れます。利用者が友だち追加後に入力済みの経路文面を1回送信した時点で、顧客と流入経路を決定的に紐付けます。経路登録メッセージはInboxへ保存しますが、新着メール通知の対象からは除外します。
 
 Live modeでは `LINE_MANUAL_SEND_ENABLED`、`LINE_BULK_SEND_ENABLED`、`LINE_AUTOMATION_SEND_ENABLED`、`LINE_RICH_MENU_MUTATION_ENABLED` を運用対象環境だけで有効にし、`SURVEY_POSTBACK_TOKEN_SECRET` に32文字以上のランダム値を設定します。`LINE_RECIPIENT_MODE=controlled` の間は、実LINEへの送信とユーザー別リッチメニュー変更をサーバー側のControlled Launch allowlist 1名だけに制限します。実運用へ切り替える場合だけProductionで `LINE_RECIPIENT_MODE=all_followers` を明示し、開発・Preview環境では全フォロワーモードを拒否します。
 
