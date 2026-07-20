@@ -47,6 +47,12 @@ export async function GET() {
       liffId: Boolean(env.NEXT_PUBLIC_LIFF_ID),
       lineLoginChannelId: Boolean(env.LINE_LOGIN_CHANNEL_ID),
       lineLoginChannelSecret: Boolean(env.LINE_LOGIN_CHANNEL_SECRET),
+      bookingManagementEnabled: env.BOOKING_MANAGEMENT_ENABLED,
+      bookingGoogleOAuth: Boolean(env.GOOGLE_CALENDAR_CLIENT_ID && env.GOOGLE_CALENDAR_CLIENT_SECRET),
+      bookingTokenEncryption: Boolean(env.BOOKING_TOKEN_ENCRYPTION_KEY),
+      bookingOAuthStateSecret: Boolean(env.BOOKING_OAUTH_STATE_SECRET),
+      bookingEmailSender: Boolean(env.BOOKING_EMAIL_FROM || env.INBOUND_EMAIL_NOTIFICATION_FROM),
+      bookingRemindersEnabled: env.BOOKING_REMINDERS_ENABLED,
       acquisitionAutoTagging: Boolean(
         env.NEXT_PUBLIC_LIFF_ID &&
         env.LINE_LOGIN_CHANNEL_ID &&
