@@ -95,7 +95,7 @@ export async function processWebhookEvent(
       const contact = await applyContact(store, context, event, "follow");
       if (contact && store.ensureConversationForContact) await store.ensureConversationForContact(context.organizationId, contact.id, eventAt(event));
       if (contact && context.minimumLaunchClient) {
-        await sendFollowSurveyIfConfigured({ client: context.minimumLaunchClient, organizationId: context.organizationId, contactId: contact.id, webhookEventId: event.webhookEventId });
+        await sendFollowSurveyIfConfigured({ client: context.minimumLaunchClient, organizationId: context.organizationId, contactId: contact.id, webhookEventId: event.webhookEventId, replyToken: event.replyToken });
       }
       await store.completeEvent(claim.eventId, "processed");
       return "processed";
@@ -111,7 +111,7 @@ export async function processWebhookEvent(
       const postback = (event as LineEvent & { postback?: { data?: string } }).postback;
       if (postback?.data && context.minimumLaunchClient) {
         const contact = await applyContact(store, context, event, "message");
-        if (contact) await handleLiveSurveyPostback({ client: context.minimumLaunchClient, organizationId: context.organizationId, contactId: contact.id, data: postback.data, webhookEventId: event.webhookEventId });
+        if (contact) await handleLiveSurveyPostback({ client: context.minimumLaunchClient, organizationId: context.organizationId, contactId: contact.id, data: postback.data, webhookEventId: event.webhookEventId, replyToken: event.replyToken });
       }
       await store.completeEvent(claim.eventId, "processed");
       return "processed";
@@ -190,7 +190,8 @@ export async function processWebhookEvent(
           client: context.minimumLaunchClient,
           organizationId: context.organizationId,
           contactId: contact.id,
-          webhookEventId: event.webhookEventId
+          webhookEventId: event.webhookEventId,
+          replyToken: event.replyToken
         });
       }
       await store.completeEvent(claim.eventId, "processed");
