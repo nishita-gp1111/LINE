@@ -15,6 +15,7 @@ import { activeTagAssignmentKey, tagDefinitionSchema } from "@/lib/milestone3/fo
 import { createOpaquePostbackToken, verifyOpaquePostbackToken } from "@/lib/milestone3/survey";
 import { SupabaseInboxStore } from "@/lib/inbox/store-supabase";
 import { sendInboxTextMessage } from "@/lib/inbox/send-service";
+import { createLineReplyClient } from "@/lib/line/send";
 import type { MessageRecord } from "@/lib/webhook/store";
 import { followSurveyClientRequestId, parseSurveyPostbackData, selectEligibleSurveyRichMenu, selectRichMenuRule, surveyCompletionClientRequestId, surveyGreetingClientRequestId, surveyPostbackData, surveyQuestionClientRequestId, surveyResponseKey, surveyRichMenuJobKey, surveyRichMenuRunAt, type RichMenuRuleCandidate, type SurveyRichMenuCandidate } from "@/lib/minimum-launch/domain";
 import { validateRichMenuImage } from "@/lib/minimum-launch/rich-menu-image";
@@ -372,7 +373,97 @@ async function sendSurveyFlexMessage(input: { client: SupabaseClient; organizati
   return store.updateOutboundMessage(input.organizationId, claimed.id, { status: "accepted", lineRequestId: result.lineRequestId, lineAcceptedRequestId: result.lineAcceptedRequestId, acceptedAt: new Date().toISOString() });
 }
 
-async function sendSurveyQuestionMessage(input: { client: SupabaseClient; organizationId: string; contactId: string; profileId: string; text: string; options: QuickReplyOption[]; clientRequestId: string; sessionId: string; gate: "manual" | "automation"; questionNumber: number; questionTotal: number }): Promise<MessageRecord> {
+type SurveyReplyEntry = {
+  textContent: string;
+  message: LineFlexMessage;
+  clientRequestId: string;
+};
+
+function surveyReplyClientRequestId(clientRequestId: string): string {
+  // Reply delivery uses a distinct key so a survey that previously failed through
+  // the quota-counted Push API can resume on the next user interaction.
+  return `${clientRequestId}:reply-v1`;
+}
+
+async function sendSurveyReplyMessages(input: { client: SupabaseClient; organizationId: string; contactId: string; profileId: string; replyToken: string; entries: SurveyReplyEntry[]; gate: "manual" | "automation" }): Promise<MessageRecord[]> {
+  assertLaunchAction(input.gate === "automation" ? "LINE_AUTOMATION_SEND_ENABLED" : "LINE_MANUAL_SEND_ENABLED");
+  if (!input.replyToken.trim()) throw new Error("LINE Reply Tokenがありません。");
+  if (input.entries.length < 1 || input.entries.length > 5) throw new Error("LINE Reply APIは1回につき1〜5件のメッセージを送信できます。");
+  const contact = await contactFor(input.client, input.organizationId, input.contactId);
+  if (String(contact.friend_status) === "blocked") throw new Error("ブロック中の顧客には送信できません。");
+  await assertControlledRecipient(input.client, input.organizationId, String(contact.line_user_id));
+  const store = new SupabaseInboxStore(input.client, input.organizationId);
+  const conversation = await store.ensureConversationForContact(input.organizationId, input.contactId, new Date().toISOString());
+  const records = new Map<string, MessageRecord>();
+  const pending: Array<{ entry: SurveyReplyEntry; message: MessageRecord }> = [];
+
+  for (const entry of input.entries) {
+    const clientRequestId = surveyReplyClientRequestId(entry.clientRequestId);
+    const existing = await store.findOutboundByClientRequest(input.organizationId, clientRequestId);
+    if (existing?.status === "accepted" || existing?.status === "sending") {
+      records.set(entry.clientRequestId, existing);
+      continue;
+    }
+    const created = existing
+      ? { message: existing }
+      : await store.createOutboundMessage({ organizationId: input.organizationId, conversationId: conversation.id, contactId: input.contactId, textContent: entry.textContent, clientRequestId, retryKey: randomUUID(), sentByProfileId: input.profileId });
+    const claimed = await store.claimOutboundMessage(input.organizationId, created.message.id, input.profileId);
+    records.set(entry.clientRequestId, claimed);
+    pending.push({ entry, message: claimed });
+  }
+
+  if (pending.length) {
+    const result = await createLineReplyClient().replyMessages({ replyToken: input.replyToken, messages: pending.map((item) => item.entry.message) });
+    const completedAt = new Date().toISOString();
+    for (const [index, item] of pending.entries()) {
+      await store.recordOutboundAttempt({
+        organizationId: input.organizationId,
+        messageId: item.message.id,
+        attemptNumber: item.message.attemptCount,
+        httpStatus: result.httpStatus,
+        lineRequestId: result.lineRequestId,
+        lineAcceptedRequestId: result.lineAcceptedRequestId,
+        errorClass: result.accepted ? null : result.errorClass,
+        errorMessageSafe: result.accepted ? null : result.safeMessage
+      });
+      const updated = result.accepted
+        ? await store.updateOutboundMessage(input.organizationId, item.message.id, { status: "accepted", lineRequestId: result.lineRequestId, lineAcceptedRequestId: result.lineAcceptedRequestId, lineSentMessageId: result.lineSentMessageIds[index] || null, acceptedAt: completedAt })
+        : await store.updateOutboundMessage(input.organizationId, item.message.id, { status: result.retryable ? "retryable_failed" : "permanently_failed", lineRequestId: result.lineRequestId, lineAcceptedRequestId: result.lineAcceptedRequestId, errorClass: result.errorClass, errorCode: result.errorCode, errorMessageSafe: result.safeMessage, failedAt: completedAt });
+      records.set(item.entry.clientRequestId, updated);
+    }
+  }
+
+  return input.entries.map((entry) => {
+    const message = records.get(entry.clientRequestId);
+    if (!message) throw new Error("アンケート返信の送信結果を取得できませんでした。");
+    return message;
+  });
+}
+
+function surveyQuestionFlexMessage(input: { text: string; options: QuickReplyOption[]; sessionId: string; questionNumber: number; questionTotal: number }): LineFlexMessage {
+  return buildSurveyQuestionMessage({
+    accountName: getServerEnv().LINE_EXPECTED_DISPLAY_NAME,
+    title: input.text,
+    questionNumber: input.questionNumber,
+    questionTotal: input.questionTotal,
+    answers: input.options.map((option) => ({ label: option.label, data: surveyPostbackData(input.sessionId, option.token) }))
+  });
+}
+
+async function sendSurveyQuestionMessage(input: { client: SupabaseClient; organizationId: string; contactId: string; profileId: string; text: string; options: QuickReplyOption[]; clientRequestId: string; sessionId: string; gate: "manual" | "automation"; questionNumber: number; questionTotal: number; replyToken?: string }): Promise<MessageRecord> {
+  const message = surveyQuestionFlexMessage(input);
+  if (input.replyToken?.trim()) {
+    const [sent] = await sendSurveyReplyMessages({
+      client: input.client,
+      organizationId: input.organizationId,
+      contactId: input.contactId,
+      profileId: input.profileId,
+      replyToken: input.replyToken,
+      gate: input.gate,
+      entries: [{ textContent: input.text, clientRequestId: input.clientRequestId, message }]
+    });
+    return sent;
+  }
   return sendSurveyFlexMessage({
     client: input.client,
     organizationId: input.organizationId,
@@ -381,13 +472,7 @@ async function sendSurveyQuestionMessage(input: { client: SupabaseClient; organi
     textContent: input.text,
     clientRequestId: input.clientRequestId,
     gate: input.gate,
-    message: buildSurveyQuestionMessage({
-      accountName: getServerEnv().LINE_EXPECTED_DISPLAY_NAME,
-      title: input.text,
-      questionNumber: input.questionNumber,
-      questionTotal: input.questionTotal,
-      answers: input.options.map((option) => ({ label: option.label, data: surveyPostbackData(input.sessionId, option.token) }))
-    })
+    message
   });
 }
 
@@ -570,22 +655,18 @@ function surveyContinuationGate(): "manual" | "automation" {
   return isLaunchFlagEnabled("LINE_AUTOMATION_SEND_ENABLED") ? "automation" : "manual";
 }
 
-async function sendSurveyCompletion(input: { client: SupabaseClient; organizationId: string; contactId: string; survey: Row; sessionId: string }): Promise<void> {
+async function sendSurveyCompletion(input: { client: SupabaseClient; organizationId: string; contactId: string; survey: Row; sessionId: string; replyToken?: string }): Promise<void> {
   const settings = row(input.survey.settings_json);
   const text = typeof settings.completionMessage === "string" ? settings.completionMessage.trim() : "回答ありがとうございました。";
   const richMenuId = typeof settings.postSurveyRichMenuId === "string" ? settings.postSurveyRichMenuId : null;
   const profileId = await systemProfileId(input.client, input.organizationId);
   if (text) {
-    const sent = await sendSurveyFlexMessage({
-      client: input.client,
-      organizationId: input.organizationId,
-      contactId: input.contactId,
-      profileId,
-      textContent: text,
-      clientRequestId: surveyCompletionClientRequestId(input.sessionId),
-      gate: surveyContinuationGate(),
-      message: buildSurveyCompletionMessage({ accountName: getServerEnv().LINE_EXPECTED_DISPLAY_NAME, message: text, richMenuLinked: Boolean(richMenuId) })
-    });
+    const gate = surveyContinuationGate();
+    const clientRequestId = surveyCompletionClientRequestId(input.sessionId);
+    const message = buildSurveyCompletionMessage({ accountName: getServerEnv().LINE_EXPECTED_DISPLAY_NAME, message: text, richMenuLinked: Boolean(richMenuId) });
+    const sent = input.replyToken?.trim()
+      ? (await sendSurveyReplyMessages({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, profileId, replyToken: input.replyToken, gate, entries: [{ textContent: text, clientRequestId, message }] }))[0]
+      : await sendSurveyFlexMessage({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, profileId, textContent: text, clientRequestId, gate, message });
     if (sent.status !== "accepted") throw new Error(sent.errorMessageSafe || "アンケート完了メッセージがLINE APIに受け付けられませんでした。");
   }
   if (richMenuId) {
@@ -594,7 +675,7 @@ async function sendSurveyCompletion(input: { client: SupabaseClient; organizatio
   }
 }
 
-export async function startLiveSurvey(input: { client: SupabaseClient; organizationId: string; surveyId: string; contactId?: string; profileId: string; gate?: "manual" | "automation"; clientRequestId?: string; includeGreeting?: boolean }): Promise<MessageRecord> {
+export async function startLiveSurvey(input: { client: SupabaseClient; organizationId: string; surveyId: string; contactId?: string; profileId: string; gate?: "manual" | "automation"; clientRequestId?: string; includeGreeting?: boolean; greetingClientRequestId?: string; replyToken?: string }): Promise<MessageRecord> {
   assertLaunchAction(input.gate === "automation" ? "LINE_AUTOMATION_SEND_ENABLED" : "LINE_MANUAL_SEND_ENABLED");
   const contact = await resolveContact(input.client, input.organizationId, input.contactId);
   const contactId = String(contact.id);
@@ -616,8 +697,37 @@ export async function startLiveSurvey(input: { client: SupabaseClient; organizat
   if (sessionError || !session) throw new Error("アンケートセッションを作成できませんでした。");
   try {
     await scheduleSurveyRichMenuFallback({ client: input.client, organizationId: input.organizationId, contactId, sessionId: String(session.id), richMenuId, delayMinutes: fallbackMinutes });
+    const greeting = input.includeGreeting && typeof settings.greetingMessage === "string" ? settings.greetingMessage.trim() : "";
+    const gate: "manual" | "automation" = input.gate || "manual";
+    const questionInput = {
+      client: input.client,
+      organizationId: input.organizationId,
+      contactId,
+      profileId: input.profileId,
+      text: String(question.title),
+      options: options.map((option) => ({ id: String(option.id), label: String(option.label), token: String(option.postback_token) })),
+      clientRequestId: input.clientRequestId || surveyQuestionClientRequestId(String(session.id), String(question.id)),
+      sessionId: String(session.id),
+      gate,
+      questionNumber: 1,
+      questionTotal: questions.length
+    };
+    if (input.replyToken?.trim()) {
+      const entries: SurveyReplyEntry[] = [];
+      if (greeting) {
+        entries.push({
+          textContent: greeting,
+          clientRequestId: input.greetingClientRequestId || surveyGreetingClientRequestId(`manual-${String(session.id)}`, input.surveyId, contactId),
+          message: buildSurveyGreetingMessage({ accountName: getServerEnv().LINE_EXPECTED_DISPLAY_NAME, greeting, questionTotal: questions.length })
+        });
+      }
+      entries.push({ textContent: questionInput.text, clientRequestId: questionInput.clientRequestId, message: surveyQuestionFlexMessage(questionInput) });
+      const sent = await sendSurveyReplyMessages({ client: input.client, organizationId: input.organizationId, contactId, profileId: input.profileId, replyToken: input.replyToken, entries, gate: questionInput.gate });
+      const questionMessage = sent[sent.length - 1];
+      if (!questionMessage || sent.some((message) => message.status !== "accepted")) throw new Error(questionMessage?.errorMessageSafe || "アンケートがLINE Reply APIに受け付けられませんでした。");
+      return questionMessage;
+    }
     if (input.includeGreeting) {
-      const greeting = typeof settings.greetingMessage === "string" ? settings.greetingMessage : "";
       await sendSurveyGreeting({
         client: input.client,
         organizationId: input.organizationId,
@@ -625,11 +735,11 @@ export async function startLiveSurvey(input: { client: SupabaseClient; organizat
         profileId: input.profileId,
         greeting,
         questionTotal: questions.length,
-        clientRequestId: surveyGreetingClientRequestId(`manual-${String(session.id)}`, input.surveyId, contactId),
+        clientRequestId: input.greetingClientRequestId || surveyGreetingClientRequestId(`manual-${String(session.id)}`, input.surveyId, contactId),
         gate: input.gate || "manual"
       });
     }
-    const message = await sendSurveyQuestionMessage({ client: input.client, organizationId: input.organizationId, contactId, profileId: input.profileId, text: String(question.title), options: options.map((option) => ({ id: String(option.id), label: String(option.label), token: String(option.postback_token) })), clientRequestId: input.clientRequestId || surveyQuestionClientRequestId(String(session.id), String(question.id)), sessionId: String(session.id), gate: input.gate || "manual", questionNumber: 1, questionTotal: questions.length });
+    const message = await sendSurveyQuestionMessage(questionInput);
     if (message.status !== "accepted") throw new Error(message.errorMessageSafe || "アンケートがLINE APIに受け付けられませんでした。");
     return message;
   } catch (error) {
@@ -639,7 +749,7 @@ export async function startLiveSurvey(input: { client: SupabaseClient; organizat
   }
 }
 
-export async function sendFollowSurveyIfConfigured(input: { client: SupabaseClient; organizationId: string; contactId: string; webhookEventId: string }): Promise<"sent" | "not_configured" | "disabled" | "recipient_not_allowed"> {
+export async function sendFollowSurveyIfConfigured(input: { client: SupabaseClient; organizationId: string; contactId: string; webhookEventId: string; replyToken?: string }): Promise<"sent" | "not_configured" | "disabled" | "recipient_not_allowed"> {
   if (!isLaunchFlagEnabled("LINE_AUTOMATION_SEND_ENABLED")) return "disabled";
   const { data: survey, error } = await input.client.from("surveys").select("id, settings_json").eq("organization_id", input.organizationId).eq("status", "active").eq("send_on_follow", true).maybeSingle();
   if (error) throw new Error("友だち追加時アンケートを取得できませんでした。");
@@ -648,10 +758,6 @@ export async function sendFollowSurveyIfConfigured(input: { client: SupabaseClie
   if (!await recipientIsAllowed(input.client, input.organizationId, String(contact.line_user_id))) return "recipient_not_allowed";
   const profileId = await systemProfileId(input.client, input.organizationId);
   const surveyId = String(row(survey).id);
-  const settings = row(row(survey).settings_json);
-  const greeting = typeof settings.greetingMessage === "string" ? settings.greetingMessage : "";
-  const { count: questionTotal } = await input.client.from("survey_questions").select("id", { count: "exact", head: true }).eq("organization_id", input.organizationId).eq("survey_id", surveyId);
-  await sendSurveyGreeting({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, profileId, greeting, questionTotal: questionTotal || 1, clientRequestId: surveyGreetingClientRequestId(input.webhookEventId, surveyId, input.contactId) });
   await startLiveSurvey({
     client: input.client,
     organizationId: input.organizationId,
@@ -659,7 +765,10 @@ export async function sendFollowSurveyIfConfigured(input: { client: SupabaseClie
     contactId: input.contactId,
     profileId,
     gate: "automation",
-    clientRequestId: followSurveyClientRequestId(input.webhookEventId, surveyId, input.contactId)
+    clientRequestId: followSurveyClientRequestId(input.webhookEventId, surveyId, input.contactId),
+    greetingClientRequestId: surveyGreetingClientRequestId(input.webhookEventId, surveyId, input.contactId),
+    includeGreeting: true,
+    replyToken: input.replyToken
   });
   return "sent";
 }
@@ -684,7 +793,7 @@ async function applySurveyTagAction(input: { client: SupabaseClient; organizatio
   }
 }
 
-export async function handleLiveSurveyPostback(input: { client: SupabaseClient; organizationId: string; contactId: string; data: string; webhookEventId: string }): Promise<{ handled: boolean; duplicate: boolean; tagId?: string; nextQuestionId?: string; completed?: boolean }> {
+export async function handleLiveSurveyPostback(input: { client: SupabaseClient; organizationId: string; contactId: string; data: string; webhookEventId: string; replyToken?: string }): Promise<{ handled: boolean; duplicate: boolean; tagId?: string; nextQuestionId?: string; completed?: boolean }> {
   const postback = parseSurveyPostbackData(input.data);
   if (!postback) return { handled: false, duplicate: false };
   const contact = await contactFor(input.client, input.organizationId, input.contactId);
@@ -748,7 +857,7 @@ export async function handleLiveSurveyPostback(input: { client: SupabaseClient; 
     const { data: nextOptions, error: nextOptionError } = await input.client.from("survey_options").select("id, label, postback_token").eq("organization_id", input.organizationId).eq("question_id", nextQuestionId).eq("is_active", true).order("sort_order");
     if (nextOptionError || !nextOptions?.length) throw new Error("次のアンケート選択肢が見つかりません。");
     const profileId = await systemProfileId(input.client, input.organizationId);
-    const message = await sendSurveyQuestionMessage({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, profileId, text: String(nextQuestion.title), options: nextOptions.map((option) => ({ id: String(option.id), label: String(option.label), token: String(option.postback_token) })), clientRequestId: surveyQuestionClientRequestId(String(sessionRow.id), nextQuestionId), sessionId: String(sessionRow.id), gate: surveyContinuationGate(), questionNumber: nextQuestionIndex + 1, questionTotal: surveyQuestions.length });
+    const message = await sendSurveyQuestionMessage({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, profileId, text: String(nextQuestion.title), options: nextOptions.map((option) => ({ id: String(option.id), label: String(option.label), token: String(option.postback_token) })), clientRequestId: surveyQuestionClientRequestId(String(sessionRow.id), nextQuestionId), sessionId: String(sessionRow.id), gate: surveyContinuationGate(), questionNumber: nextQuestionIndex + 1, questionTotal: surveyQuestions.length, replyToken: input.replyToken });
     if (message.status !== "accepted") throw new Error(message.errorMessageSafe || "次のアンケート質問がLINE APIに受け付けられませんでした。");
     return { handled: true, duplicate, tagId, nextQuestionId, completed: false };
   }
@@ -758,7 +867,7 @@ export async function handleLiveSurveyPostback(input: { client: SupabaseClient; 
   }
   const completed = await input.client.from("survey_sessions").update({ status: "completed", completed_at: sessionRow.completed_at || now, last_interaction_at: now, updated_at: now }).eq("organization_id", input.organizationId).eq("id", sessionRow.id);
   if (completed.error) throw new Error("アンケート完了状態を保存できませんでした。");
-  await sendSurveyCompletion({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, survey: row(survey), sessionId: String(sessionRow.id) });
+  await sendSurveyCompletion({ client: input.client, organizationId: input.organizationId, contactId: input.contactId, survey: row(survey), sessionId: String(sessionRow.id), replyToken: input.replyToken });
   return { handled: true, duplicate, tagId, completed: true };
 }
 

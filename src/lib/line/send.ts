@@ -118,6 +118,119 @@ export function createLinePushClient(): LinePushClient {
   return new LiveLinePushClient(env.LINE_CHANNEL_ACCESS_TOKEN);
 }
 
+export type LineReplyInput = {
+  replyToken: string;
+  messages: Array<{
+    type: string;
+    text?: string;
+    altText?: string;
+    contents?: Record<string, unknown>;
+    [key: string]: unknown;
+  }>;
+};
+
+export type LineReplyAccepted = {
+  accepted: true;
+  httpStatus: 200;
+  lineRequestId: string | null;
+  lineAcceptedRequestId: string | null;
+  lineSentMessageIds: string[];
+};
+
+export type LineReplyRejected = {
+  accepted: false;
+  retryable: boolean;
+  httpStatus: number | null;
+  errorClass: string;
+  errorCode: string | null;
+  safeMessage: string;
+  lineRequestId: string | null;
+  lineAcceptedRequestId: string | null;
+};
+
+export type LineReplyResult = LineReplyAccepted | LineReplyRejected;
+
+export interface LineReplyClient {
+  replyMessages(input: LineReplyInput): Promise<LineReplyResult>;
+}
+
+function validReplyInput(input: LineReplyInput): boolean {
+  return input.replyToken.trim().length > 0 && input.messages.length >= 1 && input.messages.length <= 5;
+}
+
+async function parseSentMessageIds(response: Response): Promise<string[]> {
+  try {
+    const json = (await response.json()) as unknown;
+    return sentMessagesSchema.safeParse(json).data?.sentMessages?.flatMap((message) => message.id ? [message.id] : []) || [];
+  } catch {
+    return [];
+  }
+}
+
+export class LiveLineReplyClient implements LineReplyClient {
+  constructor(private readonly accessToken: string) {}
+
+  async replyMessages(input: LineReplyInput): Promise<LineReplyResult> {
+    if (!validReplyInput(input)) {
+      return { accepted: false, retryable: false, httpStatus: null, errorClass: "invalid_reply_request", errorCode: null, safeMessage: "LINE Reply APIの送信内容が不正です。", lineRequestId: null, lineAcceptedRequestId: null };
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+    try {
+      const response = await fetch("https://api.line.me/v2/bot/message/reply", {
+        method: "POST",
+        redirect: "error",
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ replyToken: input.replyToken, messages: input.messages }),
+        signal: controller.signal
+      });
+      const lineRequestId = header(response, "x-line-request-id");
+      const lineAcceptedRequestId = header(response, "x-line-accepted-request-id");
+      if (response.status === 200) {
+        return { accepted: true, httpStatus: 200, lineRequestId, lineAcceptedRequestId, lineSentMessageIds: await parseSentMessageIds(response) };
+      }
+      return {
+        accepted: false,
+        retryable: response.status >= 500 && response.status <= 599,
+        httpStatus: response.status,
+        errorClass: response.status === 429 ? "rate_limited" : response.status >= 500 ? "line_5xx" : "line_rejected",
+        errorCode: String(response.status),
+        safeMessage: response.status === 429 ? "LINE APIの一時的な送信制限です。" : response.status >= 500 ? "LINE APIの一時的なエラーです。" : "LINE Reply APIが送信を拒否しました。",
+        lineRequestId,
+        lineAcceptedRequestId
+      };
+    } catch (error) {
+      const timedOut = error instanceof DOMException && error.name === "AbortError";
+      return { accepted: false, retryable: true, httpStatus: null, errorClass: timedOut ? "timeout" : "connection_error", errorCode: null, safeMessage: timedOut ? "LINE Reply APIがタイムアウトしました。" : "LINE Reply APIへ接続できませんでした。", lineRequestId: null, lineAcceptedRequestId: null };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+export class MockLineReplyClient implements LineReplyClient {
+  constructor(private readonly outcome: "success" | "409" | "429" | "500" | "timeout" = "success") {}
+
+  async replyMessages(input: LineReplyInput): Promise<LineReplyResult> {
+    if (!validReplyInput(input)) return { accepted: false, retryable: false, httpStatus: null, errorClass: "invalid_reply_request", errorCode: null, safeMessage: "Mock Reply送信内容が不正です。", lineRequestId: null, lineAcceptedRequestId: null };
+    if (this.outcome === "timeout") return { accepted: false, retryable: true, httpStatus: null, errorClass: "timeout", errorCode: null, safeMessage: "Mock Reply送信をタイムアウトとして扱いました。", lineRequestId: null, lineAcceptedRequestId: null };
+    if (this.outcome === "429") return { accepted: false, retryable: false, httpStatus: 429, errorClass: "rate_limited", errorCode: "429", safeMessage: "Mock Reply送信をレート制限として扱いました。", lineRequestId: "mock-reply-request", lineAcceptedRequestId: null };
+    if (this.outcome === "500") return { accepted: false, retryable: true, httpStatus: 500, errorClass: "line_5xx", errorCode: "500", safeMessage: "Mock Reply送信を一時エラーとして扱いました。", lineRequestId: "mock-reply-request", lineAcceptedRequestId: null };
+    if (this.outcome === "409") return { accepted: false, retryable: false, httpStatus: 409, errorClass: "line_rejected", errorCode: "409", safeMessage: "Mock Reply送信を拒否として扱いました。", lineRequestId: "mock-reply-request", lineAcceptedRequestId: null };
+    return { accepted: true, httpStatus: 200, lineRequestId: "mock-reply-request", lineAcceptedRequestId: null, lineSentMessageIds: input.messages.map((_, index) => `mock-reply-sent-${index + 1}`) };
+  }
+}
+
+export function createLineReplyClient(): LineReplyClient {
+  const env = getServerEnv();
+  if (env.MOCK_LINE_API) return new MockLineReplyClient(env.MOCK_LINE_SEND_OUTCOME);
+  if (!env.LINE_CHANNEL_ACCESS_TOKEN) throw new LineSendConfigurationError("LINE_CHANNEL_ACCESS_TOKENが設定されていません。");
+  return new LiveLineReplyClient(env.LINE_CHANNEL_ACCESS_TOKEN);
+}
+
 export type LineMulticastInput = { lineUserIds: string[]; messages: Array<Record<string, unknown>>; retryKey: string };
 export type LineMulticastResult = { accepted: boolean; retryable: boolean; httpStatus: number | null; lineRequestId: string | null; safeMessage?: string };
 
