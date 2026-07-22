@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     if (body.action === "template_create") return reply({ template: createMockTemplate({ name: String(body.name || ""), items: Array.isArray(body.items) ? body.items as Array<Record<string, unknown>> : [{ type: "text", text: "" }] }) }, 201);
     if (body.action === "campaign_create") return reply({ campaign: createMockCampaign({ name: String(body.name || ""), templateId: body.templateId ? String(body.templateId) : null, recipientIds: Array.isArray(body.recipientIds) ? body.recipientIds.map(String) : [], scheduledAt: body.scheduledAt ? String(body.scheduledAt) : null }) }, 201);
     if (body.action === "campaign_dispatch" && body.id) return reply({ campaign: await dispatchMockCampaign(String(body.id)) });
-    if (body.action === "tag_audience_preview") return reply({ preview: { recipientCount: 1, matchedCount: 1, excludedCount: 0, sample: ["Mock Contact"], matchMode: body.matchMode, tagIds: body.tagIds } });
+    if (body.action === "tag_audience_preview") return reply({ preview: { recipientCount: 1, matchedCount: 1, excludedCount: 0, excludedByTagCount: 0, sample: ["Mock Contact"], matchMode: body.matchMode, tagIds: body.tagIds, excludeTagIds: body.excludeTagIds || [] } });
     if (body.action === "tag_campaign_send") return reply({ campaign: { id: body.clientRequestId, name: body.name, status: "completed", recipientCount: body.expectedRecipientCount, excludedCount: 0, acceptedCount: body.expectedRecipientCount, failedBatches: 0, textPreview: String(body.text || "").slice(0, 120), createdAt: new Date().toISOString(), completedAt: new Date().toISOString() } });
     return reply({ error: "unknown_action" }, 400);
   } catch (error) {

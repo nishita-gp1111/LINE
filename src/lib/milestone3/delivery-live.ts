@@ -6,7 +6,14 @@ import { getServerEnv } from "@/lib/env/server";
 import { assertLaunchAction, assertTestRecipient } from "@/lib/launch/flags";
 import { evaluateRecipientPolicy } from "@/lib/launch/recipient-policy";
 import { chunk } from "@/lib/milestone3/delivery";
-import { selectTagAudience, tagAudienceSelectionSchema, tagCampaignSendSchema, type TagMatchMode } from "@/lib/milestone3/tag-campaign";
+import {
+  parseTagAudienceFilter,
+  selectTagAudience,
+  serializeTagAudienceFilter,
+  tagAudienceSelectionSchema,
+  tagCampaignSendSchema,
+  type TagMatchMode
+} from "@/lib/milestone3/tag-campaign";
 import { createLineMulticastClient } from "@/lib/line/send";
 
 type Row = Record<string, unknown>;
@@ -57,15 +64,18 @@ async function listAudienceContacts(client: SupabaseClient, organizationId: stri
   }));
 }
 
-async function resolveTagAudience(client: SupabaseClient, organizationId: string, input: { tagIds: string[]; matchMode: TagMatchMode }): Promise<{ contacts: AudienceContact[]; matchedCount: number; excludedCount: number; sample: string[] }> {
+async function resolveTagAudience(client: SupabaseClient, organizationId: string, input: { tagIds: string[]; excludeTagIds?: string[]; matchMode: TagMatchMode }): Promise<{ contacts: AudienceContact[]; matchedCount: number; excludedCount: number; excludedByTagCount: number; sample: string[] }> {
   const parsed = tagAudienceSelectionSchema.parse(input);
-  const { data: tags, error: tagError } = await client.from("tags").select("id").eq("organization_id", organizationId).eq("is_active", true).in("id", parsed.tagIds);
-  if (tagError || (tags || []).length !== parsed.tagIds.length) throw new Error("選択したタグが見つかりません。");
-  const assignments = await listTagAssignments(client, organizationId, parsed.tagIds);
-  const candidateIds = [...new Set(assignments.map((value) => value.contactId))];
+  const allTagIds = [...new Set([...parsed.tagIds, ...parsed.excludeTagIds])];
+  const { data: tags, error: tagError } = await client.from("tags").select("id").eq("organization_id", organizationId).eq("is_active", true).in("id", allTagIds);
+  if (tagError || (tags || []).length !== allTagIds.length) throw new Error("選択した対象タグまたは除外タグが見つかりません。");
+  const assignments = await listTagAssignments(client, organizationId, allTagIds);
+  const requiredTags = new Set(parsed.tagIds);
+  const candidateIds = [...new Set(assignments.filter((value) => requiredTags.has(value.tagId)).map((value) => value.contactId))];
   const contacts = await listAudienceContacts(client, organizationId, candidateIds);
   const selection = selectTagAudience({
     tagIds: parsed.tagIds,
+    excludeTagIds: parsed.excludeTagIds,
     matchMode: parsed.matchMode,
     contacts: contacts.map((contact) => ({ id: contact.id, friendStatus: contact.friendStatus, marketingStatus: contact.marketingStatus })),
     assignments,
@@ -85,6 +95,7 @@ async function resolveTagAudience(client: SupabaseClient, organizationId: string
     contacts: allowed,
     matchedCount: selection.matchedCount,
     excludedCount: selection.excludedCount + selection.recipientIds.length - allowed.length,
+    excludedByTagCount: selection.excludedByTagCount,
     sample: allowed.slice(0, 20).map((contact) => contact.displayName)
   };
 }
@@ -96,9 +107,11 @@ export async function previewLiveTagAudience(client: SupabaseClient, organizatio
     recipientCount: audience.contacts.length,
     matchedCount: audience.matchedCount,
     excludedCount: audience.excludedCount,
+    excludedByTagCount: audience.excludedByTagCount,
     sample: audience.sample,
     matchMode: parsed.matchMode,
-    tagIds: parsed.tagIds
+    tagIds: parsed.tagIds,
+    excludeTagIds: parsed.excludeTagIds
   };
 }
 
@@ -130,12 +143,23 @@ export async function listLiveTagCampaigns(client: SupabaseClient, organizationI
   return (data || []).map(publicCampaign);
 }
 
-async function contactLineIds(client: SupabaseClient, organizationId: string, contactIds: string[]): Promise<string[]> {
+async function contactLineIds(client: SupabaseClient, organizationId: string, contactIds: string[], excludeTagIds: string[]): Promise<string[]> {
   const [{ data, error }, preferences] = await Promise.all([
     client.from("contacts").select("id, line_user_id, friend_status").eq("organization_id", organizationId).in("id", contactIds),
     client.from("contact_delivery_preferences").select("contact_id, marketing_status").eq("organization_id", organizationId).in("contact_id", contactIds)
   ]);
   if (error || preferences.error) throw new Error("配信直前の送信先確認に失敗しました。");
+  if (excludeTagIds.length) {
+    const excluded = await client.from("contact_tag_assignments")
+      .select("contact_id")
+      .eq("organization_id", organizationId)
+      .in("contact_id", contactIds)
+      .in("tag_id", excludeTagIds)
+      .is("removed_at", null)
+      .limit(1);
+    if (excluded.error) throw new Error("配信直前の除外タグ確認に失敗しました。");
+    if ((excluded.data || []).length) throw new Error("配信対象に除外タグが付いた顧客が含まれています。もう一度プレビューしてください。");
+  }
   const byId = new Map((data || []).map((value) => [String(row(value).id), row(value)]));
   const marketingById = new Map((preferences.data || []).map((value) => [String(row(value).contact_id), String(row(value).marketing_status)]));
   return contactIds.map((contactId) => {
@@ -176,7 +200,7 @@ export async function sendLiveTagCampaign(input: { client: SupabaseClient; organ
       id: parsed.clientRequestId,
       organization_id: input.organizationId,
       name: parsed.name,
-      description: `AND:${parsed.tagIds.join(",")}`,
+      description: serializeTagAudienceFilter(parsed),
       status: "preparing",
       delivery_mode: "multicast",
       message_snapshot_json: [{ type: "text", text: parsed.text }],
@@ -200,13 +224,14 @@ export async function sendLiveTagCampaign(input: { client: SupabaseClient; organ
       await input.client.from("campaigns").update({ status: "failed", failed_batches: batches.length, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("id", parsed.clientRequestId);
       throw new Error("配信対象を安全なバッチへ分割できませんでした。");
     }
-    await input.client.from("campaign_events").insert({ organization_id: input.organizationId, campaign_id: parsed.clientRequestId, event_type: "tag_campaign_confirmed", metadata_redacted_json: { tagCount: parsed.tagIds.length, matchMode: parsed.matchMode, recipientCount: audience.contacts.length }, profile_id: input.profileId });
+    await input.client.from("campaign_events").insert({ organization_id: input.organizationId, campaign_id: parsed.clientRequestId, event_type: "tag_campaign_confirmed", metadata_redacted_json: { tagCount: parsed.tagIds.length, excludedTagCount: parsed.excludeTagIds.length, excludedByTagCount: audience.excludedByTagCount, matchMode: parsed.matchMode, recipientCount: audience.contacts.length }, profile_id: input.profileId });
   }
 
-  const campaign = await input.client.from("campaigns").select("message_snapshot_json").eq("organization_id", input.organizationId).eq("id", parsed.clientRequestId).single();
+  const campaign = await input.client.from("campaigns").select("message_snapshot_json, description").eq("organization_id", input.organizationId).eq("id", parsed.clientRequestId).single();
   if (campaign.error || !campaign.data) throw new Error("配信本文を取得できませんでした。");
   const message = Array.isArray(campaign.data.message_snapshot_json) ? row(campaign.data.message_snapshot_json[0]) : {};
   if (message.type !== "text" || typeof message.text !== "string") throw new Error("配信本文が不正です。");
+  const audienceFilter = parseTagAudienceFilter(String(campaign.data.description || ""));
   await input.client.from("campaigns").update({ status: "sending", started_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("id", parsed.clientRequestId).in("status", ["preparing", "sending"]);
 
   const batches = await input.client.from("campaign_batches").select("id, contact_ids, retry_key, attempt_count, status").eq("organization_id", input.organizationId).eq("campaign_id", parsed.clientRequestId).order("batch_number");
@@ -220,7 +245,7 @@ export async function sendLiveTagCampaign(input: { client: SupabaseClient; organ
     if (!claimed.data) continue;
     const contactIds = Array.isArray(batch.contact_ids) ? batch.contact_ids.map(String) : [];
     try {
-      const lineUserIds = await contactLineIds(input.client, input.organizationId, contactIds);
+      const lineUserIds = await contactLineIds(input.client, input.organizationId, contactIds, audienceFilter.excludeTagIds);
       const result = await line.multicast({ lineUserIds, messages: [{ type: "text", text: message.text }], retryKey: String(batch.retry_key) });
       await input.client.from("campaign_batches").update(result.accepted ? {
         status: "accepted",
