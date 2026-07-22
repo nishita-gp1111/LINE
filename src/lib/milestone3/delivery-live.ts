@@ -216,6 +216,26 @@ async function finishCampaign(client: SupabaseClient, organizationId: string, ca
   return publicCampaign(updated.data);
 }
 
+async function recordAcceptedBatchInInbox(client: SupabaseClient, input: {
+  organizationId: string;
+  campaignId: string;
+  batchId: string;
+  lineRequestId: string | null;
+  acceptedAt: string;
+}): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await client.rpc("record_campaign_outbound_batch_history", {
+      target_organization_id: input.organizationId,
+      target_campaign_id: input.campaignId,
+      target_batch_id: input.batchId,
+      target_line_request_id: input.lineRequestId,
+      target_accepted_at: input.acceptedAt
+    });
+    if (!result.error) return true;
+  }
+  return false;
+}
+
 export async function sendLiveTagCampaign(input: { client: SupabaseClient; organizationId: string; profileId: string; payload: unknown }): Promise<Row> {
   assertLaunchAction("LINE_BULK_SEND_ENABLED");
   const parsed = tagCampaignSendSchema.parse(input.payload);
@@ -278,22 +298,46 @@ export async function sendLiveTagCampaign(input: { client: SupabaseClient; organ
     try {
       const lineUserIds = await contactLineIds(input.client, input.organizationId, contactIds, audienceFilter.tagIds, audienceFilter.excludeTagIds);
       const result = await line.multicast({ lineUserIds, messages: [{ type: "text", text: message.text }], retryKey: String(batch.retry_key) });
-      await input.client.from("campaign_batches").update(result.accepted ? {
-        status: "accepted",
-        line_request_id: result.lineRequestId,
-        accepted_at: new Date().toISOString(),
-        last_error_class: null,
-        last_error_safe: null,
-        updated_at: new Date().toISOString()
-      } : {
-        status: result.retryable ? "retry_wait" : "failed",
-        line_request_id: result.lineRequestId,
-        last_error_class: result.retryable ? "retryable" : "line_rejected",
-        last_error_safe: result.safeMessage || "LINE APIが配信を拒否しました。",
-        updated_at: new Date().toISOString()
-      }).eq("organization_id", input.organizationId).eq("id", String(batch.id));
+      if (result.accepted) {
+        const acceptedAt = new Date().toISOString();
+        const accepted = await input.client.from("campaign_batches").update({
+          status: "accepted",
+          line_request_id: result.lineRequestId,
+          accepted_at: acceptedAt,
+          last_error_class: null,
+          last_error_safe: null,
+          updated_at: acceptedAt
+        }).eq("organization_id", input.organizationId).eq("id", String(batch.id));
+        if (accepted.error) throw new Error("LINE APIの受付結果を保存できませんでした。");
+
+        const historyRecorded = await recordAcceptedBatchInInbox(input.client, {
+          organizationId: input.organizationId,
+          campaignId: parsed.clientRequestId,
+          batchId: String(batch.id),
+          lineRequestId: result.lineRequestId,
+          acceptedAt
+        });
+        if (!historyRecorded) {
+          await input.client.from("campaign_events").insert({
+            organization_id: input.organizationId,
+            campaign_id: parsed.clientRequestId,
+            event_type: "campaign_inbox_history_failed",
+            metadata_redacted_json: { batchId: String(batch.id) },
+            profile_id: input.profileId
+          });
+        }
+      } else {
+        const rejected = await input.client.from("campaign_batches").update({
+          status: result.retryable ? "retry_wait" : "failed",
+          line_request_id: result.lineRequestId,
+          last_error_class: result.retryable ? "retryable" : "line_rejected",
+          last_error_safe: result.safeMessage || "LINE APIが配信を拒否しました。",
+          updated_at: new Date().toISOString()
+        }).eq("organization_id", input.organizationId).eq("id", String(batch.id));
+        if (rejected.error) throw new Error("LINE APIの拒否結果を保存できませんでした。");
+      }
     } catch (error) {
-      await input.client.from("campaign_batches").update({ status: "failed", last_error_class: "validation", last_error_safe: error instanceof Error ? error.message : "配信対象の確認に失敗しました。", updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("id", String(batch.id));
+      await input.client.from("campaign_batches").update({ status: "failed", last_error_class: "validation", last_error_safe: error instanceof Error ? error.message : "配信対象の確認に失敗しました。", updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("id", String(batch.id)).neq("status", "accepted");
     }
   }
   const finished = await finishCampaign(input.client, input.organizationId, parsed.clientRequestId);
