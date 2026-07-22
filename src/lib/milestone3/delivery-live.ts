@@ -18,6 +18,7 @@ import { createLineMulticastClient } from "@/lib/line/send";
 
 type Row = Record<string, unknown>;
 type AudienceContact = { id: string; lineUserId: string; displayName: string; friendStatus: string; marketingStatus: string };
+const RECIPIENT_PREVIEW_LIMIT = 100;
 
 function row(value: unknown): Row {
   return value && typeof value === "object" ? value as Row : {};
@@ -64,7 +65,7 @@ async function listAudienceContacts(client: SupabaseClient, organizationId: stri
   }));
 }
 
-async function resolveTagAudience(client: SupabaseClient, organizationId: string, input: { tagIds: string[]; excludeTagIds?: string[]; matchMode: TagMatchMode }): Promise<{ contacts: AudienceContact[]; matchedCount: number; excludedCount: number; excludedByTagCount: number; sample: string[] }> {
+async function resolveTagAudience(client: SupabaseClient, organizationId: string, input: { tagIds: string[]; excludeTagIds?: string[]; matchMode: TagMatchMode }): Promise<{ contacts: AudienceContact[]; matchedCount: number; excludedCount: number; excludedByTagCount: number; sample: string[]; sampleIsComplete: boolean }> {
   const parsed = tagAudienceSelectionSchema.parse(input);
   const allTagIds = [...new Set([...parsed.tagIds, ...parsed.excludeTagIds])];
   const { data: tags, error: tagError } = await client.from("tags").select("id").eq("organization_id", organizationId).eq("is_active", true).in("id", allTagIds);
@@ -96,19 +97,42 @@ async function resolveTagAudience(client: SupabaseClient, organizationId: string
     matchedCount: selection.matchedCount,
     excludedCount: selection.excludedCount + selection.recipientIds.length - allowed.length,
     excludedByTagCount: selection.excludedByTagCount,
-    sample: allowed.slice(0, 20).map((contact) => contact.displayName)
+    sample: allowed.slice(0, RECIPIENT_PREVIEW_LIMIT).map((contact) => contact.displayName),
+    sampleIsComplete: allowed.length <= RECIPIENT_PREVIEW_LIMIT
+  };
+}
+
+async function resolveAdminRecipientPreview(client: SupabaseClient, organizationId: string, audience: AudienceContact[]): Promise<{ configured: boolean; found: boolean; included: boolean; displayName: string | null }> {
+  const lineUserId = getServerEnv().LINE_ADMIN_USER_ID;
+  if (!lineUserId) return { configured: false, found: false, included: false, displayName: null };
+  const { data, error } = await client.from("contacts")
+    .select("id, display_name")
+    .eq("organization_id", organizationId)
+    .eq("line_user_id", lineUserId)
+    .maybeSingle();
+  if (error) throw new Error("本人確認用LINEアカウントを照合できませんでした。");
+  if (!data) return { configured: true, found: false, included: false, displayName: null };
+  const contactId = String(row(data).id);
+  return {
+    configured: true,
+    found: true,
+    included: audience.some((contact) => contact.id === contactId),
+    displayName: String(row(data).display_name || "本人確認用アカウント")
   };
 }
 
 export async function previewLiveTagAudience(client: SupabaseClient, organizationId: string, input: unknown): Promise<Row> {
   const parsed = tagAudienceSelectionSchema.parse(input);
   const audience = await resolveTagAudience(client, organizationId, parsed);
+  const adminRecipient = await resolveAdminRecipientPreview(client, organizationId, audience.contacts);
   return {
     recipientCount: audience.contacts.length,
     matchedCount: audience.matchedCount,
     excludedCount: audience.excludedCount,
     excludedByTagCount: audience.excludedByTagCount,
     sample: audience.sample,
+    sampleIsComplete: audience.sampleIsComplete,
+    adminRecipient,
     matchMode: parsed.matchMode,
     tagIds: parsed.tagIds,
     excludeTagIds: parsed.excludeTagIds
@@ -143,28 +167,35 @@ export async function listLiveTagCampaigns(client: SupabaseClient, organizationI
   return (data || []).map(publicCampaign);
 }
 
-async function contactLineIds(client: SupabaseClient, organizationId: string, contactIds: string[], excludeTagIds: string[]): Promise<string[]> {
-  const [{ data, error }, preferences] = await Promise.all([
+async function contactLineIds(client: SupabaseClient, organizationId: string, contactIds: string[], requiredTagIds: string[], excludeTagIds: string[]): Promise<string[]> {
+  const allFilterTagIds = [...new Set([...requiredTagIds, ...excludeTagIds])];
+  const [{ data, error }, preferences, assignments] = await Promise.all([
     client.from("contacts").select("id, line_user_id, friend_status").eq("organization_id", organizationId).in("id", contactIds),
-    client.from("contact_delivery_preferences").select("contact_id, marketing_status").eq("organization_id", organizationId).in("contact_id", contactIds)
+    client.from("contact_delivery_preferences").select("contact_id, marketing_status").eq("organization_id", organizationId).in("contact_id", contactIds),
+    client.from("contact_tag_assignments").select("contact_id, tag_id").eq("organization_id", organizationId).in("contact_id", contactIds).in("tag_id", allFilterTagIds).is("removed_at", null)
   ]);
-  if (error || preferences.error) throw new Error("配信直前の送信先確認に失敗しました。");
-  if (excludeTagIds.length) {
-    const excluded = await client.from("contact_tag_assignments")
-      .select("contact_id")
-      .eq("organization_id", organizationId)
-      .in("contact_id", contactIds)
-      .in("tag_id", excludeTagIds)
-      .is("removed_at", null)
-      .limit(1);
-    if (excluded.error) throw new Error("配信直前の除外タグ確認に失敗しました。");
-    if ((excluded.data || []).length) throw new Error("配信対象に除外タグが付いた顧客が含まれています。もう一度プレビューしてください。");
-  }
+  if (error || preferences.error || assignments.error) throw new Error("配信直前の送信先確認に失敗しました。");
   const byId = new Map((data || []).map((value) => [String(row(value).id), row(value)]));
   const marketingById = new Map((preferences.data || []).map((value) => [String(row(value).contact_id), String(row(value).marketing_status)]));
+  const finalSelection = selectTagAudience({
+    tagIds: requiredTagIds,
+    excludeTagIds,
+    matchMode: "all",
+    contacts: (data || []).map((value) => ({
+      id: String(row(value).id),
+      friendStatus: String(row(value).friend_status),
+      marketingStatus: marketingById.get(String(row(value).id)) || "eligible"
+    })),
+    assignments: (assignments.data || []).map((value) => ({ contactId: String(row(value).contact_id), tagId: String(row(value).tag_id) })),
+    maxRecipients: contactIds.length
+  });
+  const finalRecipientIds = new Set(finalSelection.recipientIds);
+  if (contactIds.some((contactId) => !finalRecipientIds.has(contactId))) {
+    throw new Error("配信対象のタグ・友だち状態・配信可否がプレビュー後に変わりました。もう一度プレビューしてください。");
+  }
   return contactIds.map((contactId) => {
     const contact = byId.get(contactId);
-    if (!contact || contact.friend_status !== "following" || (marketingById.get(contactId) || "eligible") !== "eligible") throw new Error("配信対象に送信できない顧客が含まれています。再度プレビューしてください。");
+    if (!contact) throw new Error("配信対象の顧客が見つかりません。もう一度プレビューしてください。");
     const lineUserId = String(contact.line_user_id || "");
     assertTestRecipient(lineUserId);
     return lineUserId;
@@ -183,6 +214,26 @@ async function finishCampaign(client: SupabaseClient, organizationId: string, ca
   const updated = await client.from("campaigns").update({ status, accepted_recipients: acceptedCount, failed_batches: failedBatches, completed_at: completedAt, updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("id", campaignId).select("*").single();
   if (updated.error || !updated.data) throw new Error("配信結果を保存できませんでした。");
   return publicCampaign(updated.data);
+}
+
+async function recordAcceptedBatchInInbox(client: SupabaseClient, input: {
+  organizationId: string;
+  campaignId: string;
+  batchId: string;
+  lineRequestId: string | null;
+  acceptedAt: string;
+}): Promise<boolean> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await client.rpc("record_campaign_outbound_batch_history", {
+      target_organization_id: input.organizationId,
+      target_campaign_id: input.campaignId,
+      target_batch_id: input.batchId,
+      target_line_request_id: input.lineRequestId,
+      target_accepted_at: input.acceptedAt
+    });
+    if (!result.error) return true;
+  }
+  return false;
 }
 
 export async function sendLiveTagCampaign(input: { client: SupabaseClient; organizationId: string; profileId: string; payload: unknown }): Promise<Row> {
@@ -245,24 +296,48 @@ export async function sendLiveTagCampaign(input: { client: SupabaseClient; organ
     if (!claimed.data) continue;
     const contactIds = Array.isArray(batch.contact_ids) ? batch.contact_ids.map(String) : [];
     try {
-      const lineUserIds = await contactLineIds(input.client, input.organizationId, contactIds, audienceFilter.excludeTagIds);
+      const lineUserIds = await contactLineIds(input.client, input.organizationId, contactIds, audienceFilter.tagIds, audienceFilter.excludeTagIds);
       const result = await line.multicast({ lineUserIds, messages: [{ type: "text", text: message.text }], retryKey: String(batch.retry_key) });
-      await input.client.from("campaign_batches").update(result.accepted ? {
-        status: "accepted",
-        line_request_id: result.lineRequestId,
-        accepted_at: new Date().toISOString(),
-        last_error_class: null,
-        last_error_safe: null,
-        updated_at: new Date().toISOString()
-      } : {
-        status: result.retryable ? "retry_wait" : "failed",
-        line_request_id: result.lineRequestId,
-        last_error_class: result.retryable ? "retryable" : "line_rejected",
-        last_error_safe: result.safeMessage || "LINE APIが配信を拒否しました。",
-        updated_at: new Date().toISOString()
-      }).eq("organization_id", input.organizationId).eq("id", String(batch.id));
+      if (result.accepted) {
+        const acceptedAt = new Date().toISOString();
+        const accepted = await input.client.from("campaign_batches").update({
+          status: "accepted",
+          line_request_id: result.lineRequestId,
+          accepted_at: acceptedAt,
+          last_error_class: null,
+          last_error_safe: null,
+          updated_at: acceptedAt
+        }).eq("organization_id", input.organizationId).eq("id", String(batch.id));
+        if (accepted.error) throw new Error("LINE APIの受付結果を保存できませんでした。");
+
+        const historyRecorded = await recordAcceptedBatchInInbox(input.client, {
+          organizationId: input.organizationId,
+          campaignId: parsed.clientRequestId,
+          batchId: String(batch.id),
+          lineRequestId: result.lineRequestId,
+          acceptedAt
+        });
+        if (!historyRecorded) {
+          await input.client.from("campaign_events").insert({
+            organization_id: input.organizationId,
+            campaign_id: parsed.clientRequestId,
+            event_type: "campaign_inbox_history_failed",
+            metadata_redacted_json: { batchId: String(batch.id) },
+            profile_id: input.profileId
+          });
+        }
+      } else {
+        const rejected = await input.client.from("campaign_batches").update({
+          status: result.retryable ? "retry_wait" : "failed",
+          line_request_id: result.lineRequestId,
+          last_error_class: result.retryable ? "retryable" : "line_rejected",
+          last_error_safe: result.safeMessage || "LINE APIが配信を拒否しました。",
+          updated_at: new Date().toISOString()
+        }).eq("organization_id", input.organizationId).eq("id", String(batch.id));
+        if (rejected.error) throw new Error("LINE APIの拒否結果を保存できませんでした。");
+      }
     } catch (error) {
-      await input.client.from("campaign_batches").update({ status: "failed", last_error_class: "validation", last_error_safe: error instanceof Error ? error.message : "配信対象の確認に失敗しました。", updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("id", String(batch.id));
+      await input.client.from("campaign_batches").update({ status: "failed", last_error_class: "validation", last_error_safe: error instanceof Error ? error.message : "配信対象の確認に失敗しました。", updated_at: new Date().toISOString() }).eq("organization_id", input.organizationId).eq("id", String(batch.id)).neq("status", "accepted");
     }
   }
   const finished = await finishCampaign(input.client, input.organizationId, parsed.clientRequestId);

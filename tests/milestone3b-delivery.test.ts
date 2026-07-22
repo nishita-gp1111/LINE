@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { chunk, classifyLineBatchResult, dedupeAndExclude, jobIdempotencyKey, quotaAllows } from "@/lib/milestone3/delivery";
 import { mediaMessageFromAsset, outboundMessageListSchema, validateMediaUpload } from "@/lib/line/media";
 
@@ -25,5 +26,14 @@ describe("Milestone 3B delivery", () => {
     const asset = { id: "00000000-0000-4000-8000-000000000001", assetType: "audio" as const, publicUrl: "https://cdn.example.test/a.mp3", mimeType: "audio/mpeg", sizeBytes: 10, durationMs: 1000 };
     expect(mediaMessageFromAsset(asset).type).toBe("audio");
     expect(() => outboundMessageListSchema.parse(Array.from({ length: 6 }, () => ({ type: "text", text: "x" })))).toThrow();
+  });
+  it("backfills accepted campaigns into 1:1 inbox history without resending", () => {
+    const migration = readFileSync(new URL("../supabase/migrations/20260722010000_campaign_inbox_history.sql", import.meta.url), "utf8");
+    expect(migration).toContain("record_campaign_outbound_batch_history");
+    expect(migration).toContain("format('campaign:%s:%s'");
+    expect(migration).toContain("on conflict (organization_id, client_request_id)");
+    expect(migration).toContain("where cb.status = 'accepted'");
+    expect(migration).toContain("last_outbound_at");
+    expect(migration).not.toContain("api.line.me");
   });
 });

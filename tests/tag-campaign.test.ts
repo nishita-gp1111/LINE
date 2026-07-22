@@ -50,8 +50,10 @@ describe("tag campaign audience", () => {
       name: "対象タグ配信",
       text: "ご案内です。",
       expectedRecipientCount: 1,
-      clientRequestId: "00000000-0000-4000-8000-000000000002"
+      clientRequestId: "00000000-0000-4000-8000-000000000002",
+      recipientListConfirmed: true
     };
+    expect(tagCampaignSendSchema.safeParse({ ...base, recipientListConfirmed: false, confirmation: "配信する" }).success).toBe(false);
     expect(tagCampaignSendSchema.safeParse({ ...base, confirmation: "送信" }).success).toBe(false);
     expect(tagCampaignSendSchema.safeParse({ ...base, confirmation: "配信する" }).success).toBe(true);
     expect(tagCampaignSendSchema.safeParse({ ...base, matchMode: "any", confirmation: "配信する" }).success).toBe(false);

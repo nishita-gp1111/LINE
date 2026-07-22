@@ -6,11 +6,22 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type Tag = { id: string; name: string };
-type Preview = { recipientCount: number; matchedCount: number; excludedCount: number; excludedByTagCount: number; sample: string[]; matchMode: "all"; tagIds: string[]; excludeTagIds: string[] };
+type Preview = {
+  recipientCount: number;
+  matchedCount: number;
+  excludedCount: number;
+  excludedByTagCount: number;
+  sample: string[];
+  sampleIsComplete: boolean;
+  adminRecipient: { configured: boolean; found: boolean; included: boolean; displayName: string | null };
+  matchMode: "all";
+  tagIds: string[];
+  excludeTagIds: string[];
+};
 type Campaign = { id: string; name: string; status: string; recipientCount: number; excludedCount: number; acceptedCount: number; failedBatches: number; textPreview: string; createdAt: string; completedAt?: string | null };
 
 function statusLabel(status: string): string {
-  if (status === "completed") return "LINE受付完了";
+  if (status === "completed") return "LINE API受付済み";
   if (status === "partially_failed") return "一部失敗";
   if (status === "failed") return "失敗";
   if (status === "sending") return "配信処理中";
@@ -25,6 +36,7 @@ export default function CampaignsPage() {
   const [name, setName] = useState("");
   const [text, setText] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [recipientListConfirmed, setRecipientListConfirmed] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [requestId, setRequestId] = useState("");
   const [message, setMessage] = useState("");
@@ -50,6 +62,7 @@ export default function CampaignsPage() {
     setPreview(null);
     setRequestId("");
     setConfirmation("");
+    setRecipientListConfirmed(false);
     setMessage("");
   }
 
@@ -79,6 +92,7 @@ export default function CampaignsPage() {
       setPreview(data.preview);
       setRequestId(crypto.randomUUID());
       setConfirmation("");
+      setRecipientListConfirmed(false);
       setMessage(data.preview.recipientCount ? "対象者を確認しました。本文と最終確認を入力してください。" : "配信できる対象者はいません。");
     } catch (error) {
       setPreview(null);
@@ -105,12 +119,13 @@ export default function CampaignsPage() {
           text,
           expectedRecipientCount: preview.recipientCount,
           clientRequestId: requestId,
+          recipientListConfirmed,
           confirmation
         })
       });
       const data = await response.json() as { campaign?: Campaign; error?: string };
       if (!response.ok || data.error || !data.campaign) throw new Error(data.error || "配信を実行できませんでした。");
-      setMessage(`${data.campaign.acceptedCount}名分をLINE APIが受け付けました。`);
+      setMessage(`${data.campaign.acceptedCount}名分の配信処理をLINE APIが受け付けました。端末への到達や既読を保証する表示ではありません。`);
       setSelectedTags([]);
       setExcludedTags([]);
       setName("");
@@ -126,7 +141,7 @@ export default function CampaignsPage() {
     }
   }
 
-  const canSend = Boolean(preview?.recipientCount && name.trim() && text.trim() && confirmation === "配信する" && requestId && !working);
+  const canSend = Boolean(preview?.recipientCount && recipientListConfirmed && name.trim() && text.trim() && confirmation === "配信する" && requestId && !working);
 
   return <main className="min-h-screen px-4 py-6 sm:px-8 sm:py-8 lg:px-10">
     <div className="mx-auto max-w-6xl">
@@ -154,7 +169,18 @@ export default function CampaignsPage() {
         <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-black text-emerald-800">配信対象</p><p className="mt-1 text-4xl font-black text-emerald-950">{preview.recipientCount}<span className="ml-1 text-lg">名</span></p></div><p className="text-xs text-emerald-900/70">対象タグ一致 {preview.matchedCount}名 / 除外 {preview.excludedCount}名（除外タグ {preview.excludedByTagCount}名）</p></div>
         <p className="mt-3 text-sm text-emerald-950"><b>対象（すべて）：</b>{selectedNames.join("、")}</p>
         <p className="mt-2 text-sm text-red-900"><b>除外（どれか）：</b>{excludedNames.length ? excludedNames.join("、") : "指定なし"}</p>
-        {preview.sample.length ? <p className="mt-2 text-xs text-emerald-900/65">確認用サンプル：{preview.sample.join("、")}</p> : null}
+        {preview.adminRecipient.configured ? <div className={`mt-4 rounded-xl border px-4 py-3 text-sm font-bold ${preview.adminRecipient.included ? "border-emerald-300 bg-white text-emerald-900" : "border-red-300 bg-red-50 text-red-950"}`}>
+          {preview.adminRecipient.included
+            ? `本人確認用LINE「${preview.adminRecipient.displayName || "設定済みアカウント"}」は今回の対象に含まれています。`
+            : preview.adminRecipient.found
+              ? `本人確認用LINE「${preview.adminRecipient.displayName || "設定済みアカウント"}」は今回の対象外です。このまま配信してもご自身のLINEには届きません。`
+              : "本人確認用LINEは設定されていますが、CRM顧客として見つかりません。ご自身のLINEでは受信確認できません。"}
+        </div> : null}
+        {preview.sample.length ? <div className="mt-4 rounded-xl border border-emerald-200 bg-white p-4">
+          <p className="text-sm font-black text-emerald-950">{preview.sampleIsComplete ? `実際の配信対象者（${preview.recipientCount}名全員）` : `実際の配信対象者（先頭${preview.sample.length}名 / 全${preview.recipientCount}名）`}</p>
+          <div className="mt-3 flex max-h-52 flex-wrap gap-2 overflow-y-auto">{preview.sample.map((displayName, index) => <span key={`${displayName}-${index}`} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-900">{displayName}</span>)}</div>
+        </div> : null}
+        <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-emerald-300 bg-white p-4 text-sm font-bold text-emerald-950"><input type="checkbox" checked={recipientListConfirmed} onChange={(event) => setRecipientListConfirmed(event.target.checked)} className="mt-0.5" /><span>上の一覧に、今回送りたい相手が含まれていることを確認しました</span></label>
       </section> : null}
 
       <section className="mt-6 rounded-2xl border border-line bg-white p-5 shadow-sm sm:p-6">
@@ -168,7 +194,7 @@ export default function CampaignsPage() {
         {message ? <p role="status" className="mt-3 rounded-lg bg-paper px-3 py-2 text-sm font-bold text-ink/70">{message}</p> : null}
       </section>
 
-      <section className="mt-6 rounded-2xl border border-line bg-white p-5 shadow-sm sm:p-6"><h2 className="font-black">配信履歴</h2><div className="mt-4 grid gap-2">{campaigns.length ? campaigns.map((campaign) => <div key={campaign.id} className="rounded-xl border border-line p-4"><div className="flex flex-wrap items-center justify-between gap-2"><b>{campaign.name}</b><span className="rounded-full bg-paper px-2.5 py-1 text-xs font-bold">{statusLabel(campaign.status)}</span></div><p className="mt-2 text-xs text-ink/55">対象 {campaign.recipientCount}名 / LINE受付 {campaign.acceptedCount}名 / 除外 {campaign.excludedCount}名 / 失敗batch {campaign.failedBatches}</p><p className="mt-2 line-clamp-2 text-sm text-ink/65">{campaign.textPreview}</p></div>) : <p className="text-sm text-ink/45">配信履歴はまだありません。</p>}</div></section>
+      <section className="mt-6 rounded-2xl border border-line bg-white p-5 shadow-sm sm:p-6"><h2 className="font-black">配信履歴</h2><p className="mt-1 text-xs text-ink/50">「API受付」はLINEが配信処理を受け付けた状態です。ブロック等により、個々の端末への到達を保証するものではありません。</p><div className="mt-4 grid gap-2">{campaigns.length ? campaigns.map((campaign) => <div key={campaign.id} className="rounded-xl border border-line p-4"><div className="flex flex-wrap items-center justify-between gap-2"><b>{campaign.name}</b><span className="rounded-full bg-paper px-2.5 py-1 text-xs font-bold">{statusLabel(campaign.status)}</span></div><p className="mt-2 text-xs text-ink/55">対象 {campaign.recipientCount}名 / API受付 {campaign.acceptedCount}名 / 除外 {campaign.excludedCount}名 / 失敗batch {campaign.failedBatches}</p><p className="mt-2 line-clamp-2 text-sm text-ink/65">{campaign.textPreview}</p></div>) : <p className="text-sm text-ink/45">配信履歴はまだありません。</p>}</div></section>
     </div>
   </main>;
 }
