@@ -29,6 +29,7 @@ export const tagCampaignSendSchema = z.object({
   text: z.string().trim().min(1, "本文を入力してください。").max(5_000, "本文は5000文字以内です。"),
   expectedRecipientCount: z.number().int().nonnegative(),
   clientRequestId: z.string().uuid(),
+  recipientListConfirmed: z.literal(true, { error: "実際の配信対象者を確認してください。" }),
   confirmation: z.literal("配信する", { error: "最終確認に「配信する」と入力してください。" })
 }).superRefine(rejectOverlappingTags);
 
