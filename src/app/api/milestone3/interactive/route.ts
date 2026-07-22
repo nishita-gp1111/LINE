@@ -3,8 +3,8 @@ import { getAuthenticatedUser } from "@/lib/auth/server";
 import { canAdminister, canOperate, getInboxAuthContext } from "@/lib/inbox/auth";
 import { getServerEnv } from "@/lib/env/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { activateScenario, answerSurvey, createRichMenu, createRule, createScenario, createSurvey, enrollAndRunScenario, linkRichMenuForTest, listMenus, listRules, listScenarios, listSurveys, previewRule, setFollowSurveyForMock, validateRichMenuForMock, chooseSurveyInput } from "@/lib/milestone3/interactive-store";
-import { activateLiveScenario, createLiveTagScenario, createLiveSurvey, listLiveContacts, listLiveRichMenus, listLiveScenarios, listLiveSurveys, setLiveFollowSurvey, startLiveSurvey, updateLiveSurveyExperience } from "@/lib/minimum-launch/live";
+import { activateScenario, answerSurvey, createRichMenu, createRule, createScenario, createSurvey, deactivateScenario, enrollAndRunScenario, linkRichMenuForTest, listMenus, listRules, listScenarios, listSurveys, previewRule, setFollowSurveyForMock, validateRichMenuForMock, chooseSurveyInput } from "@/lib/milestone3/interactive-store";
+import { activateLiveScenario, createLiveTagScenario, createLiveSurvey, deactivateLiveScenario, listLiveContacts, listLiveRichMenus, listLiveScenarios, listLiveSurveys, setLiveFollowSurvey, startLiveSurvey, updateLiveSurveyExperience } from "@/lib/minimum-launch/live";
 
 function reply(data: unknown, status = 200) { return NextResponse.json(data, { status, headers: { "cache-control": "no-store" } }); }
 export async function GET(request: Request) {
@@ -43,6 +43,10 @@ export async function POST(request: Request) {
         if (!canAdminister(auth.role)) return reply({ error: "管理者権限が必要です。" }, 403);
         return reply({ scenario: await activateLiveScenario(client, auth.organizationId, String(body.id)) });
       }
+      if (body.action === "scenario_deactivate") {
+        if (!canAdminister(auth.role)) return reply({ error: "管理者権限が必要です。" }, 403);
+        return reply({ scenario: await deactivateLiveScenario(client, auth.organizationId, String(body.id)) });
+      }
       if (body.action === "survey_create") return reply({ survey: await createLiveSurvey({ client, organizationId: auth.organizationId, profileId: auth.profileId, name: String(body.name || ""), questionTitle: String(body.questionTitle || ""), options: Array.isArray(body.options) ? body.options as Array<{ key: string; label: string; tagId?: string }> : [], questions: Array.isArray(body.questions) ? body.questions as Array<{ key?: string; title: string; options: Array<{ key?: string; label: string; tagId?: string }> }> : undefined, greetingMessage: String(body.greetingMessage || ""), completionMessage: String(body.completionMessage || ""), postSurveyRichMenuId: body.postSurveyRichMenuId ? String(body.postSurveyRichMenuId) : undefined, richMenuFallbackMinutes: Number(body.richMenuFallbackMinutes || 30), sendOnFollow: body.sendOnFollow === true }) }, 201);
       if (body.action === "survey_experience_update") return reply({ survey: await updateLiveSurveyExperience({ client, organizationId: auth.organizationId, surveyId: String(body.surveyId || ""), greetingMessage: String(body.greetingMessage || ""), completionMessage: String(body.completionMessage || ""), postSurveyRichMenuId: body.postSurveyRichMenuId ? String(body.postSurveyRichMenuId) : null, richMenuFallbackMinutes: Number(body.richMenuFallbackMinutes || 30) }) });
       if (body.action === "survey_send") return reply({ message: await startLiveSurvey({ client, organizationId: auth.organizationId, surveyId: String(body.surveyId), contactId: body.contactId ? String(body.contactId) : undefined, profileId: auth.profileId, includeGreeting: body.includeGreeting === true }) });
@@ -52,6 +56,7 @@ export async function POST(request: Request) {
     }
     if (body.action === "scenario_create") return reply({ scenario: createScenario({ name: String(body.name || ""), triggerType: String(body.triggerType || "manual"), steps: body.steps || [] }) }, 201);
     if (body.action === "scenario_activate") return reply({ scenario: activateScenario(String(body.id)) });
+    if (body.action === "scenario_deactivate") return reply({ scenario: deactivateScenario(String(body.id)) });
     if (body.action === "scenario_run") return reply({ scenario: await enrollAndRunScenario(String(body.id), String(body.contactId || "mock-contact-test")) });
     if (body.action === "rule_create") return reply({ rule: createRule(body) }, 201);
     if (body.action === "rule_preview") return reply(previewRule(String(body.input || "")));

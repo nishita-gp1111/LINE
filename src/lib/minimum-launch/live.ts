@@ -909,6 +909,15 @@ export async function activateLiveScenario(client: SupabaseClient, organizationI
   return row(data);
 }
 
+export async function deactivateLiveScenario(client: SupabaseClient, organizationId: string, scenarioId: string): Promise<Row> {
+  const selected = await client.from("automation_scenarios").select("*").eq("organization_id", organizationId).eq("id", scenarioId).eq("trigger_type", "tag_added").maybeSingle();
+  if (selected.error || !selected.data) throw new Error("即時配信設定が見つかりません。");
+  if (row(selected.data).status === "paused") return row(selected.data);
+  const { data, error } = await client.from("automation_scenarios").update({ status: "paused", updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("id", scenarioId).eq("trigger_type", "tag_added").select("*").single();
+  if (error || !data) throw new Error("即時配信を無効化できませんでした。");
+  return row(data);
+}
+
 function richMenuAction(action: RichMenuActionInput): Row {
   const value = action.value.trim();
   if (action.type === "uri") {
