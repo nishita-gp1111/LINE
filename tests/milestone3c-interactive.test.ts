@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { createRule, createScenario, createSurvey, enrollAndRunScenario, answerSurvey, createRichMenu, listSurveys, validateRichMenuForMock } from "@/lib/milestone3/interactive-store";
+import { activateScenario, createRule, createScenario, createSurvey, deactivateScenario, enrollAndRunScenario, answerSurvey, createRichMenu, listSurveys, validateRichMenuForMock } from "@/lib/milestone3/interactive-store";
 import { createTag, foundationState } from "@/lib/milestone3/foundation-store";
 
 beforeEach(() => { process.env.MOCK_LINE_API = "true"; process.env.APP_ENV = "test"; process.env.LINE_CHANNEL_SECRET = "interactive-test-secret"; });
@@ -10,6 +10,14 @@ describe("Milestone 3 interactive Mock flows", () => {
     scenario.status = "active";
     const first = await enrollAndRunScenario(scenario.id, "mock-contact"); const second = await enrollAndRunScenario(scenario.id, "mock-contact");
     expect(first.enrollments).toHaveLength(1); expect(second.enrollments).toHaveLength(1); expect(first.enrollments[0]?.status).toBe("completed");
+  });
+  it("pauses an active scenario, rejects new runs, and allows reactivation", async () => {
+    const scenario = createScenario({ name: `pausable-${Date.now()}`, triggerType: "tag_added", steps: [{ order: 0, type: "end", config: {} }] });
+    expect(activateScenario(scenario.id).status).toBe("active");
+    expect(deactivateScenario(scenario.id).status).toBe("paused");
+    await expect(enrollAndRunScenario(scenario.id, "paused-contact")).rejects.toThrow("scenario is not active");
+    expect(activateScenario(scenario.id).status).toBe("active");
+    await expect(enrollAndRunScenario(scenario.id, "reactivated-contact")).resolves.toMatchObject({ status: "active" });
   });
   it("orders and previews keyword rules", () => { const rule = createRule({ matchType: "exact", pattern: `hello-${Date.now()}`, priority: 1, isActive: true, stopAfterMatch: true, action: "reply" }); expect(rule.matchType).toBe("exact"); });
   it("answers a survey once per idempotency key", () => { const survey = createSurvey({ name: `survey-${Date.now()}`, questionTitle: "OK?", type: "single_choice", options: [{ key: "yes", label: "Yes" }] }); const token = survey.question.options[0]!.token; const first = answerSurvey({ surveyId: survey.id, contactId: "mock-contact", token, idempotencyKey: "same-answer" }); const second = answerSurvey({ surveyId: survey.id, contactId: "mock-contact", token, idempotencyKey: "same-answer" }); expect(first.duplicate).toBe(false); expect(second.duplicate).toBe(true); });
