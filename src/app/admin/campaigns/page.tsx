@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type Tag = { id: string; name: string };
-type Preview = { recipientCount: number; matchedCount: number; excludedCount: number; sample: string[]; matchMode: "all"; tagIds: string[] };
+type Preview = { recipientCount: number; matchedCount: number; excludedCount: number; excludedByTagCount: number; sample: string[]; matchMode: "all"; tagIds: string[]; excludeTagIds: string[] };
 type Campaign = { id: string; name: string; status: string; recipientCount: number; excludedCount: number; acceptedCount: number; failedBatches: number; textPreview: string; createdAt: string; completedAt?: string | null };
 
 function statusLabel(status: string): string {
@@ -21,6 +21,7 @@ export default function CampaignsPage() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [excludedTags, setExcludedTags] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [text, setText] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -43,6 +44,7 @@ export default function CampaignsPage() {
   useEffect(() => { void load(); }, []);
 
   const selectedNames = useMemo(() => selectedTags.map((id) => tags.find((tag) => tag.id === id)?.name).filter(Boolean), [selectedTags, tags]);
+  const excludedNames = useMemo(() => excludedTags.map((id) => tags.find((tag) => tag.id === id)?.name).filter(Boolean), [excludedTags, tags]);
 
   function invalidatePreview() {
     setPreview(null);
@@ -53,6 +55,13 @@ export default function CampaignsPage() {
 
   function toggleTag(tagId: string) {
     setSelectedTags((current) => current.includes(tagId) ? current.filter((id) => id !== tagId) : [...current, tagId]);
+    setExcludedTags((current) => current.filter((id) => id !== tagId));
+    invalidatePreview();
+  }
+
+  function toggleExcludedTag(tagId: string) {
+    setExcludedTags((current) => current.includes(tagId) ? current.filter((id) => id !== tagId) : [...current, tagId]);
+    setSelectedTags((current) => current.filter((id) => id !== tagId));
     invalidatePreview();
   }
 
@@ -63,7 +72,7 @@ export default function CampaignsPage() {
       const response = await fetch("/api/milestone3/delivery", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "tag_audience_preview", tagIds: selectedTags, matchMode: "all" })
+        body: JSON.stringify({ action: "tag_audience_preview", tagIds: selectedTags, excludeTagIds: excludedTags, matchMode: "all" })
       });
       const data = await response.json() as { preview?: Preview; error?: string };
       if (!response.ok || data.error || !data.preview) throw new Error(data.error || "対象者を確認できませんでした。");
@@ -90,6 +99,7 @@ export default function CampaignsPage() {
         body: JSON.stringify({
           action: "tag_campaign_send",
           tagIds: selectedTags,
+          excludeTagIds: excludedTags,
           matchMode: "all",
           name,
           text,
@@ -102,6 +112,7 @@ export default function CampaignsPage() {
       if (!response.ok || data.error || !data.campaign) throw new Error(data.error || "配信を実行できませんでした。");
       setMessage(`${data.campaign.acceptedCount}名分をLINE APIが受け付けました。`);
       setSelectedTags([]);
+      setExcludedTags([]);
       setName("");
       setText("");
       setConfirmation("");
@@ -120,22 +131,29 @@ export default function CampaignsPage() {
   return <main className="min-h-screen px-4 py-6 sm:px-8 sm:py-8 lg:px-10">
     <div className="mx-auto max-w-6xl">
       <Link href="/admin" className="text-sm font-bold text-moss">← 管理画面</Link>
-      <div className="mt-4"><p className="text-xs font-black uppercase tracking-[0.16em] text-moss">Tag segment delivery</p><h1 className="mt-1 text-3xl font-black">タグ配信</h1><p className="mt-2 text-sm leading-relaxed text-ink/60">複数タグを組み合わせ、対象人数を確認してからメッセージを1回配信します。</p></div>
+      <div className="mt-4"><p className="text-xs font-black uppercase tracking-[0.16em] text-moss">Tag segment delivery</p><h1 className="mt-1 text-3xl font-black">タグ配信</h1><p className="mt-2 text-sm leading-relaxed text-ink/60">対象タグと除外タグを組み合わせ、対象人数を確認してからメッセージを1回配信します。</p></div>
 
       <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"><b>即時配信です。</b> 予約配信・全員配信・自動再送は行いません。ブロック中・配信停止中の顧客は自動で除外します。</div>
 
       <section className="mt-6 rounded-2xl border border-line bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex items-center gap-3"><span className="grid size-8 place-items-center rounded-full bg-moss font-black text-white">1</span><div><h2 className="font-black">対象タグを選ぶ</h2><p className="text-xs text-ink/50">20個まで組み合わせられます。</p></div></div>
-        <div className="mt-4 grid max-h-72 gap-2 overflow-y-auto rounded-xl border border-line bg-paper/30 p-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="flex items-center gap-3"><span className="grid size-8 place-items-center rounded-full bg-moss font-black text-white">1</span><div><h2 className="font-black">対象タグを選ぶ</h2><p className="text-xs text-ink/50">選んだタグをすべて持つ顧客が候補です。</p></div></div>
+        <div className="mt-4 grid max-h-72 gap-2 overflow-y-auto rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 sm:grid-cols-2 lg:grid-cols-3">
           {tags.map((tag) => <label key={tag.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2.5 text-sm ${selectedTags.includes(tag.id) ? "border-moss bg-emerald-50 font-bold text-emerald-950" : "border-line bg-white text-ink/70"}`}><input type="checkbox" checked={selectedTags.includes(tag.id)} onChange={() => toggleTag(tag.id)} />{tag.name}</label>)}
         </div>
         <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><b className="block text-emerald-950">選択したタグをすべて持つ人（AND）</b><span className="mt-1 block text-xs text-emerald-900/70">例：タグA・B・Cを選ぶと、3つすべてが付いている顧客だけが対象です。</span></div>
+
+        <div className="mt-6"><h3 className="font-black text-red-900">このタグが付いている人には送らない</h3><p className="mt-1 text-xs text-ink/50">任意設定です。複数選んだ場合、どれか1つでも付いていれば除外します。</p></div>
+        <div className="mt-3 grid max-h-72 gap-2 overflow-y-auto rounded-xl border border-red-200 bg-red-50/40 p-3 sm:grid-cols-2 lg:grid-cols-3">
+          {tags.map((tag) => <label key={tag.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2.5 text-sm ${excludedTags.includes(tag.id) ? "border-red-500 bg-red-50 font-bold text-red-950" : "border-line bg-white text-ink/70"}`}><input type="checkbox" checked={excludedTags.includes(tag.id)} onChange={() => toggleExcludedTag(tag.id)} />{tag.name}</label>)}
+        </div>
+        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4"><b className="block text-red-950">除外タグはどれか1つ（OR）</b><span className="mt-1 block text-xs text-red-900/70">例：「成約済み」「配信不要」を選ぶと、どちらかが付いている顧客には送りません。</span></div>
         <button type="button" onClick={() => void runPreview()} disabled={!selectedTags.length || working} className="mt-4 rounded-xl bg-ink px-5 py-3 text-sm font-black text-white disabled:opacity-35">{working ? "確認しています…" : "対象人数を確認"}</button>
       </section>
 
       {preview ? <section className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6">
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-black text-emerald-800">配信対象</p><p className="mt-1 text-4xl font-black text-emerald-950">{preview.recipientCount}<span className="ml-1 text-lg">名</span></p></div><p className="text-xs text-emerald-900/70">一致 {preview.matchedCount}名 / 除外 {preview.excludedCount}名</p></div>
-        <p className="mt-3 text-sm text-emerald-950"><b>すべて：</b>{selectedNames.join("、")}</p>
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-black text-emerald-800">配信対象</p><p className="mt-1 text-4xl font-black text-emerald-950">{preview.recipientCount}<span className="ml-1 text-lg">名</span></p></div><p className="text-xs text-emerald-900/70">対象タグ一致 {preview.matchedCount}名 / 除外 {preview.excludedCount}名（除外タグ {preview.excludedByTagCount}名）</p></div>
+        <p className="mt-3 text-sm text-emerald-950"><b>対象（すべて）：</b>{selectedNames.join("、")}</p>
+        <p className="mt-2 text-sm text-red-900"><b>除外（どれか）：</b>{excludedNames.length ? excludedNames.join("、") : "指定なし"}</p>
         {preview.sample.length ? <p className="mt-2 text-xs text-emerald-900/65">確認用サンプル：{preview.sample.join("、")}</p> : null}
       </section> : null}
 
