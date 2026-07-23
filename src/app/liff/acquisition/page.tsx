@@ -3,7 +3,8 @@ import { LiffAcquisitionClient } from "@/app/liff/acquisition/liff-acquisition-c
 import {
   ACQUISITION_ROUTES,
   buildLineAcquisitionUrl,
-  buildLineFriendUrl
+  buildLineFriendUrl,
+  type AcquisitionRouteSlug
 } from "@/lib/acquisition/routes";
 import { getServerEnv } from "@/lib/env/server";
 
@@ -19,7 +20,7 @@ export default function LiffAcquisitionPage() {
   const env = getServerEnv();
   const basicId = env.LINE_EXPECTED_BASIC_ID || "";
   let friendUrl = "";
-  let fallbackMessageUrls: Partial<Record<"meeting" | "survey", string>> = {};
+  let fallbackMessageUrls: Partial<Record<AcquisitionRouteSlug, string>> = {};
 
   try {
     friendUrl = basicId ? buildLineFriendUrl(basicId) : "";

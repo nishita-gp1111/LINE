@@ -5,6 +5,7 @@ import { ACQUISITION_ROUTES } from "@/lib/acquisition/routes";
 
 export function AcquisitionLinksClient({ appUrl, automaticTagging }: { appUrl: string; automaticTagging: boolean }) {
   const [copied, setCopied] = useState<string | null>(null);
+  const routeColors = ["bg-emerald-600", "bg-sky-600", "bg-orange-500"] as const;
 
   function routeUrl(slug: string): string {
     const origin = appUrl || (typeof window === "undefined" ? "" : window.location.origin);
@@ -45,7 +46,7 @@ export function AcquisitionLinksClient({ appUrl, automaticTagging }: { appUrl: s
           {ACQUISITION_ROUTES.map((route, index) => {
             const url = routeUrl(route.slug);
             return <article key={route.slug} className="rounded-2xl border border-line bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex items-start justify-between gap-4"><div><span className={`grid size-10 place-items-center rounded-xl text-sm font-black text-white ${index === 0 ? "bg-emerald-600" : "bg-sky-600"}`}>{index + 1}</span><h2 className="mt-4 text-xl font-black">{route.label}</h2><p className="mt-1 text-xs leading-5 text-ink/50">{route.description}</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black text-emerald-700">有効</span></div>
+              <div className="flex items-start justify-between gap-4"><div><span className={`grid size-10 place-items-center rounded-xl text-sm font-black text-white ${routeColors[index % routeColors.length]}`}>{index + 1}</span><h2 className="mt-4 text-xl font-black">{route.label}</h2><p className="mt-1 text-xs leading-5 text-ink/50">{route.description}</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black text-emerald-700">有効</span></div>
               <div className="mt-5 rounded-xl bg-paper p-3"><p className="text-[10px] font-black uppercase tracking-wider text-ink/35">共有URL</p><p className="mt-1 break-all text-sm font-bold text-ink/75">{url}</p></div>
               <dl className="mt-4 grid gap-2 text-xs"><div className="flex justify-between gap-3"><dt className="text-ink/45">付与タグ</dt><dd className="font-black">{route.tagName}</dd></div><div className="flex justify-between gap-3"><dt className="text-ink/45">登録方法</dt><dd className="text-right font-bold">{automaticTagging ? "友だち追加後に自動反映" : `予備文面: ${route.registrationMessage}`}</dd></div></dl>
               <div className="mt-5 flex gap-2"><button type="button" onClick={() => void copy(route.slug)} className="focus-ring flex-1 rounded-xl bg-ink px-4 py-3 text-sm font-black text-white">{copied === route.slug ? "コピーしました ✓" : "URLをコピー"}</button><a href={url} target="_blank" rel="noreferrer" className="focus-ring rounded-xl border border-line bg-white px-4 py-3 text-sm font-black text-ink/65">開く</a></div>

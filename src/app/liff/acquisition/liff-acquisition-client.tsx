@@ -2,9 +2,9 @@
 
 import type { Liff } from "@line/liff";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { acquisitionRouteBySlug } from "@/lib/acquisition/routes";
+import { acquisitionRouteBySlug, type AcquisitionRouteSlug } from "@/lib/acquisition/routes";
 
-type SourceSlug = "meeting" | "survey";
+type SourceSlug = AcquisitionRouteSlug;
 
 type ViewState =
   | { phase: "loading" | "friendship" | "saving"; title: string; detail: string; source?: SourceSlug }
