@@ -1,5 +1,9 @@
+export const ACQUISITION_ROUTE_SLUGS = ["meeting", "survey", "hp"] as const;
+
+export type AcquisitionRouteSlug = (typeof ACQUISITION_ROUTE_SLUGS)[number];
+
 export type AcquisitionRoute = {
-  slug: "meeting" | "survey";
+  slug: AcquisitionRouteSlug;
   label: string;
   tagName: string;
   registrationMessage: string;
@@ -20,6 +24,13 @@ export const ACQUISITION_ROUTES: readonly AcquisitionRoute[] = [
     tagName: "アンケート経由",
     registrationMessage: "アンケート経由で友だち追加しました",
     description: "外部アンケートの完了画面などに設置する友だち追加URLです。"
+  },
+  {
+    slug: "hp",
+    label: "HP経由",
+    tagName: "HP経由",
+    registrationMessage: "HP経由で友だち追加しました",
+    description: "会社ホームページなどに設置する友だち追加URLです。"
   }
 ] as const;
 

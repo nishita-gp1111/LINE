@@ -75,8 +75,10 @@ function verify(fetchImpl: typeof fetch) {
 }
 
 describe("LIFF acquisition verification", () => {
-  it("accepts only the two public source slugs and rejects extra fields", () => {
+  it("accepts only the three public source slugs and rejects extra fields", () => {
     expect(liffAcquisitionClaimSchema.safeParse({ source: "meeting", idToken, accessToken }).success).toBe(true);
+    expect(liffAcquisitionClaimSchema.safeParse({ source: "survey", idToken, accessToken }).success).toBe(true);
+    expect(liffAcquisitionClaimSchema.safeParse({ source: "hp", idToken, accessToken }).success).toBe(true);
     expect(liffAcquisitionClaimSchema.safeParse({ source: "unknown", idToken, accessToken }).success).toBe(false);
     expect(liffAcquisitionClaimSchema.safeParse({ source: "survey", idToken, accessToken, lineUserId }).success).toBe(false);
   });

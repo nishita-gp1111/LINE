@@ -1,6 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
+import { ACQUISITION_ROUTE_SLUGS } from "@/lib/acquisition/routes";
 
 const lineUserIdSchema = z.string().regex(/^U[0-9a-f]{32}$/);
 
@@ -37,7 +38,7 @@ const messagingProfileSchema = z.object({
 });
 
 export const liffAcquisitionClaimSchema = z.object({
-  source: z.enum(["meeting", "survey"]),
+  source: z.enum(ACQUISITION_ROUTE_SLUGS),
   idToken: z.string().min(20).max(8192),
   accessToken: z.string().min(20).max(8192)
 }).strict();
