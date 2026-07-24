@@ -37,6 +37,12 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
     ]
   },
   {
+    label: "応募・予約",
+    items: [
+      { href: "/admin/bookings", label: "予約管理", description: "応募・面談・Google Meet", icon: "◷" }
+    ]
+  },
+  {
     label: "設定",
     items: [
       { href: "/admin/settings/line", label: "LINE接続", description: "Webhook・接続確認", icon: "⚙" }

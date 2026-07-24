@@ -170,6 +170,55 @@ npx supabase db push
 
 Minimum Production Launchの自動判定は、対象organization、7機能に必要なmigration、LINE接続設定、Sho本人1名のallowlist、必須flagと禁止flagだけを確認します。Mock環境は`INTERNAL TEST ONLY`と表示します。
 
+## Booking Management
+
+Booking Managementは、CloudWorks・LINE・メールで共有する同じURLから、応募アンケート、2名のGoogle Calendar空き時間確認、担当者の均等割当、Google Meet発行、確認メール、CRM紐付けまでを一続きにする予約機能です。追加SaaSは使わず、既存のVercel、Supabase、ResendとGoogle Calendar APIを利用します。
+
+- アンケート付き応募URL: `/apply/monitor`
+- アンケートなし日程調整URL: `/booking/monitor-interview`
+- 日時変更URL: 予約確認メールに含まれる `/booking/reschedule/{token}`
+- 管理画面: `/admin/bookings`
+
+公開画面は基本情報、アンケート、日時選択、確認、完了の順で進みます。`?source=cloudworks`、`?source=line`、`?source=email`のように流入元を付けられます。アンケート回答後に離脱した応募者も「未予約」として残り、確定時には空いている担当者のうち、当日の予約数、全体の予約数、優先度、最終割当日時の順で自動選定します。DBの排他制約でも同一担当者の時間重複を拒否します。
+
+管理画面では次を設定・確認できます。
+
+- テキスト、長文、ラジオ、チェックボックス、プルダウンの質問、必須/任意、選択肢、表示順
+- 面談時間、枠間隔、予約曜日、開始/終了時刻、前後バッファ、最短予約時間、最大予約日数
+- 担当者追加と各担当者のGoogle Calendar OAuth連携
+- 応募者、CloudWorks名、流入元、回答状況、日時、担当者、ステータス
+- 既存LINE CRM contactへの紐付け
+
+### Google Calendar設定
+
+1. Google CloudでCalendar APIを有効にし、OAuth同意画面と「ウェブ アプリケーション」のOAuth clientを作成します。
+2. 承認済みリダイレクトURIへ、対象環境の固定URLに続けて `/api/booking/google/callback` を登録します。例: `https://example.vercel.app/api/booking/google/callback`。
+3. 対象環境へ下記の環境変数を設定し、再デプロイします。暗号鍵とstate署名secretは別々のランダム値にしてください。
+4. `/admin/bookings` の「担当者・Calendar」で担当者を2名登録し、それぞれ本人のGoogleアカウントで「Google Calendar連携」を1回実行します。
+5. `/api/health` の `booking` でDB、Google OAuth、暗号化、state署名、メールの準備状況を確認します。秘密値そのものは返しません。
+
+社内Google Workspaceだけで使う場合はOAuth audienceをInternalにします。ExternalかつTestingのままでは、Calendar scopeを含むrefresh tokenが通常7日で失効するため、継続運用前にGoogleのproduction readiness要件を完了してください。要求scopeは予定の作成・更新に`calendar.events.owned`、空き時間取得に`calendar.freebusy`だけを使います。
+
+```dotenv
+BOOKING_MANAGEMENT_ENABLED=true
+BOOKING_REMINDERS_ENABLED=true
+BOOKING_EMAIL_FROM=notifications@your-verified-domain.example
+GOOGLE_CALENDAR_CLIENT_ID=
+GOOGLE_CALENDAR_CLIENT_SECRET=
+BOOKING_TOKEN_ENCRYPTION_KEY=
+BOOKING_OAUTH_STATE_SECRET=
+```
+
+`BOOKING_TOKEN_ENCRYPTION_KEY`は32 byteのbase64url値です。例として `openssl rand -base64 32 | tr '+/' '-_' | tr -d '='` で生成できます。`BOOKING_OAUTH_STATE_SECRET`も十分に長い別値を使います。いずれもVercelのserver-only secretへ保存し、ブラウザ、ログ、Gitへ出しません。
+
+予約確定時は担当者のprimary Calendarへ予定を作成し、予約ごとにGoogle Meetを発行します。日時変更はアンケートを再回答させず、最初に割り当てた担当者の空き枠だけを提示して同じCalendar eventを更新します。refresh tokenと日時変更tokenの復元値はAES-256-GCMで暗号化し、公開照合にはSHA-256だけを使います。
+
+確認メールは既存の`RESEND_API_KEY`を利用します。前日・1時間前リマインドは`BOOKING_REMINDERS_ENABLED=true`のときだけ、既存の`/api/cron/dispatch`から送信されます。予約versionとメール事業者の冪等キーにより、リスケ後の古いリマインドと重複送信を防ぎます。
+
+DBは `20260719010000_booking_management.sql` を既存migrationの後に適用します。本番適用前は必ずバックアップと`supabase db push --dry-run`を実施してください。
+
+Google公式資料: [OAuth 2.0 Web Server flow](https://developers.google.com/identity/protocols/oauth2/web-server)、[FreeBusy query](https://developers.google.com/workspace/calendar/api/v3/reference/freebusy/query)、[Create events and Google Meet](https://developers.google.com/workspace/calendar/api/guides/create-events)。
+
 ## 起動
 
 ```bash

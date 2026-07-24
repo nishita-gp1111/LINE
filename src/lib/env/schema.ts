@@ -98,6 +98,14 @@ export const envSchema = z.object({
   ),
   RESEND_API_KEY: optionalText,
 
+  BOOKING_MANAGEMENT_ENABLED: booleanEnv(true),
+  BOOKING_REMINDERS_ENABLED: booleanEnv(false),
+  BOOKING_EMAIL_FROM: optionalEmail,
+  GOOGLE_CALENDAR_CLIENT_ID: optionalText,
+  GOOGLE_CALENDAR_CLIENT_SECRET: optionalText,
+  BOOKING_TOKEN_ENCRYPTION_KEY: optionalText,
+  BOOKING_OAUTH_STATE_SECRET: optionalText,
+
   NEXT_PUBLIC_SUPABASE_URL: optionalUrl,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalText,
   SUPABASE_SERVICE_ROLE_KEY: optionalText,
