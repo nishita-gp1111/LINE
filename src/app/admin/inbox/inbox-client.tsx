@@ -1,8 +1,11 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ContactTagsPanel } from "@/components/contact-tags-panel";
+import { friendStatusPresentation } from "@/lib/contacts/status";
 import type {
   ConversationDetail,
   ConversationListItem,
@@ -63,13 +66,15 @@ function initials(name: string | null): string {
 
 function Avatar({ name, pictureUrl, size = "md" }: { name: string | null; pictureUrl: string | null; size?: "sm" | "md" | "lg" }) {
   const sizeClass = size === "lg" ? "size-20 text-2xl" : size === "sm" ? "size-10 text-sm" : "size-12 text-base";
+  const imageSize = size === "lg" ? 80 : size === "sm" ? 40 : 48;
   return (
     <span
       aria-hidden="true"
-      className={`grid shrink-0 place-items-center rounded-full border border-emerald-100 bg-emerald-50 bg-cover bg-center font-black text-emerald-700 ${sizeClass}`}
-      style={pictureUrl ? { backgroundImage: `url(${pictureUrl})` } : undefined}
+      className={`grid shrink-0 place-items-center overflow-hidden rounded-full border border-emerald-100 bg-emerald-50 font-black text-emerald-700 ${sizeClass}`}
     >
-      {pictureUrl ? null : initials(name)}
+      {pictureUrl
+        ? <img src={pictureUrl} alt="" width={imageSize} height={imageSize} loading={size === "md" ? "lazy" : "eager"} decoding="async" className="size-full object-cover" />
+        : initials(name)}
     </span>
   );
 }
@@ -84,6 +89,7 @@ async function postAction(payload: Record<string, unknown>): Promise<{ ok: boole
 }
 
 export default function InboxClient(props: Props) {
+  const router = useRouter();
   const [text, setText] = useState("");
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
@@ -119,7 +125,7 @@ export default function InboxClient(props: Props) {
     try {
       const result = await postAction(payload);
       if (!result.ok) setError(result.error || "操作に失敗しました。");
-      else window.location.reload();
+      else router.refresh();
     } catch {
       setError("操作に失敗しました。");
     } finally {
@@ -138,7 +144,10 @@ export default function InboxClient(props: Props) {
       });
       const result = await response.json() as { ok: boolean; error?: string };
       if (!result.ok) setError(result.error || "送信に失敗しました。");
-      else window.location.reload();
+      else {
+        setText("");
+        router.refresh();
+      }
     } catch {
       setError("送信に失敗しました。");
     } finally {
@@ -156,7 +165,7 @@ export default function InboxClient(props: Props) {
       });
       const result = await response.json() as { ok: boolean; error?: string };
       if (!result.ok) setError(result.error || "再試行に失敗しました。");
-      else window.location.reload();
+      else router.refresh();
     } catch {
       setError("再試行に失敗しました。");
     } finally {
@@ -197,15 +206,28 @@ export default function InboxClient(props: Props) {
         <div className="flex-1 overflow-y-auto">
           {props.items.map((item) => {
             const isSelected = selected?.conversation.id === item.conversation.id;
+            const friendStatus = friendStatusPresentation(item.contact.friendStatus);
+            const href = conversationHref(item.conversation.id);
             return (
-              <Link key={item.conversation.id} href={conversationHref(item.conversation.id)} className={`flex gap-3 border-b border-line/70 px-3 py-3.5 transition hover:bg-emerald-50/60 ${isSelected ? "bg-emerald-50 shadow-[inset_3px_0_0_#10b981]" : ""}`}>
+              <Link
+                key={item.conversation.id}
+                href={href}
+                prefetch={false}
+                onMouseEnter={() => router.prefetch(href)}
+                onFocus={() => router.prefetch(href)}
+                className={`flex gap-3 border-b border-line/70 px-3 py-3.5 transition ${friendStatus.isBlocked ? "bg-rose-50/80 hover:bg-rose-100/70" : "hover:bg-emerald-50/60"} ${isSelected ? friendStatus.isBlocked ? "shadow-[inset_3px_0_0_#e11d48]" : "bg-emerald-50 shadow-[inset_3px_0_0_#10b981]" : ""}`}
+              >
                 <div className="relative">
                   <Avatar name={item.contact.displayName} pictureUrl={item.contact.pictureUrl} />
                   {item.contact.friendStatus === "following" ? <span className="absolute bottom-0 right-0 size-3 rounded-full border-2 border-white bg-emerald-500" title="友だち" /> : null}
+                  {friendStatus.isBlocked ? <span className="absolute -bottom-0.5 -right-0.5 grid size-4 place-items-center rounded-full border-2 border-white bg-rose-600 text-[8px] font-black text-white" title="ブロック">×</span> : null}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="truncate text-sm font-black">{item.contact.displayName || "名称未取得"}</p>
+                    <p className="flex min-w-0 items-center gap-1.5 text-sm font-black">
+                      <span className="truncate">{item.contact.displayName || "名称未取得"}</span>
+                      {friendStatus.isBlocked ? <span className="shrink-0 rounded-full bg-rose-600 px-1.5 py-0.5 text-[8px] font-black text-white">ブロック</span> : null}
+                    </p>
                     <span className="shrink-0 text-[10px] text-ink/35">{date(item.conversation.lastMessageAt)}</span>
                   </div>
                   <p className="mt-1 truncate text-xs text-ink/55">{item.conversation.lastMessagePreview || "会話を開始"}</p>
@@ -231,7 +253,10 @@ export default function InboxClient(props: Props) {
             <header className="flex min-h-[72px] items-center justify-between gap-3 border-b border-black/10 bg-white px-4 py-3">
               <div className="flex min-w-0 items-center gap-3">
                 <Avatar name={selected.contact.displayName} pictureUrl={selected.contact.pictureUrl} size="sm" />
-                <div className="min-w-0"><h2 className="truncate text-base font-black">{selected.contact.displayName || "名称未取得"}</h2><p className="mt-0.5 text-[10px] text-ink/45">{selected.contact.friendStatus === "following" ? "● 友だち" : selected.contact.friendStatus === "blocked" ? "ブロック中" : "友だち状態未確認"} ・ 最終更新 {date(selected.conversation.lastMessageAt)}</p></div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2"><h2 className="truncate text-base font-black">{selected.contact.displayName || "名称未取得"}</h2>{blocked ? <span className="shrink-0 rounded-full bg-rose-600 px-2 py-0.5 text-[9px] font-black text-white">ブロック</span> : null}</div>
+                  <p className={`mt-0.5 text-[10px] ${blocked ? "font-bold text-rose-700" : "text-ink/45"}`}>{selected.contact.friendStatus === "following" ? "● 友だち" : blocked ? "LINEでブロック済み" : "友だち状態未確認"} ・ 最終更新 {date(selected.conversation.lastMessageAt)}</p>
+                </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${statusColor(selected.conversation.status)}`}>{statusLabel(selected.conversation.status)}</span>
@@ -311,7 +336,8 @@ export default function InboxClient(props: Props) {
             <section className="border-b border-line p-4">
               <h3 className="text-sm font-black">顧客情報</h3>
               <dl className="mt-3 grid gap-2 text-xs">
-                <div className="flex justify-between gap-3"><dt className="text-ink/45">友だち状態</dt><dd className="font-black">{selected.contact.friendStatus === "blocked" ? "ブロック" : selected.contact.friendStatus === "following" ? "友だち" : "未確認"}</dd></div>
+                <div className="flex items-center justify-between gap-3"><dt className="text-ink/45">友だち状態</dt><dd className={`rounded-full px-2 py-0.5 font-black ${blocked ? "bg-rose-600 text-white" : selected.contact.friendStatus === "following" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{selected.contact.friendStatus === "blocked" ? "ブロック" : selected.contact.friendStatus === "following" ? "友だち" : "未確認"}</dd></div>
+                {blocked ? <div className="flex justify-between gap-3"><dt className="text-ink/45">ブロック確認</dt><dd className="font-black text-rose-700">{date(selected.contact.unfollowedAt)}</dd></div> : null}
                 <div className="flex justify-between gap-3"><dt className="text-ink/45">最終受信</dt><dd className="font-black">{date(selected.contact.lastMessageAt)}</dd></div>
                 <div className="flex justify-between gap-3"><dt className="text-ink/45">CRM確認</dt><dd className="font-black">{selected.readState.unreadCount > 0 ? `未確認 ${selected.readState.unreadCount}件` : "確認済み"}</dd></div>
               </dl>
@@ -323,7 +349,7 @@ export default function InboxClient(props: Props) {
                 {selected.notes.map((item) => <NoteCard key={item.id} note={item} disabled={!canOperate || working} onDelete={() => void perform({ action: "note_delete", noteId: item.id })} />)}
                 {!selected.notes.length ? <p className="rounded-lg bg-paper p-3 text-center text-[10px] text-ink/40">メモはありません</p> : null}
                 <textarea value={note} onChange={(event) => setNote(event.target.value)} disabled={!canOperate || working} rows={3} placeholder="対応内容などをメモ" className="focus-ring rounded-lg border border-line p-2 text-xs disabled:opacity-50" />
-                <button type="button" disabled={!canOperate || working || !note.trim()} onClick={async () => { const result = await postAction({ action: "note_create", conversationId: selected.conversation.id, body: note }); if (result.ok) window.location.reload(); else setError(result.error || "メモを保存できませんでした。"); }} className="focus-ring rounded-lg bg-[#263331] px-3 py-2 text-xs font-black text-white disabled:opacity-35">メモを追加</button>
+                <button type="button" disabled={!canOperate || working || !note.trim()} onClick={async () => { const result = await postAction({ action: "note_create", conversationId: selected.conversation.id, body: note }); if (result.ok) { setNote(""); router.refresh(); } else setError(result.error || "メモを保存できませんでした。"); }} className="focus-ring rounded-lg bg-[#263331] px-3 py-2 text-xs font-black text-white disabled:opacity-35">メモを追加</button>
               </div>
             </section>
           </>
@@ -334,6 +360,8 @@ export default function InboxClient(props: Props) {
 }
 
 function NoteCard({ note, disabled, onDelete }: { note: ConversationNote; disabled: boolean; onDelete: () => void }) {
+  const router = useRouter();
+
   async function edit() {
     const body = window.prompt("内部メモを編集", note.body);
     if (!body || !body.trim()) return;
@@ -343,7 +371,7 @@ function NoteCard({ note, disabled, onDelete }: { note: ConversationNote; disabl
       body: JSON.stringify({ action: "note_update", noteId: note.id, body })
     });
     const result = await response.json() as { ok: boolean };
-    if (result.ok) window.location.reload();
+    if (result.ok) router.refresh();
   }
 
   return (

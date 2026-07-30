@@ -9,21 +9,25 @@ import { assignLiveTag, createLiveTag, listLiveTags, removeLiveTag } from "@/lib
 function json(data: unknown, status = 200) { return NextResponse.json(data, { status, headers: { "cache-control": "no-store" } }); }
 
 export async function GET(request: Request) {
-  if (!await getAuthenticatedUser()) return json({ error: "unauthorized" }, 401);
-  const resource = new URL(request.url).searchParams.get("resource") || "tags";
+  const searchParams = new URL(request.url).searchParams;
+  const resource = searchParams.get("resource") || "tags";
+  const contactId = searchParams.get("contactId") || undefined;
   if (getServerEnv().MOCK_LINE_API) {
+    if (!await getAuthenticatedUser()) return json({ error: "unauthorized" }, 401);
     const state = foundationState();
-    if (resource === "tags") return json({ groups: state.groups, tags: state.tags, assignments: state.assignments.filter((item) => !item.removedAt) });
+    if (resource === "tags") return json({ groups: state.groups, tags: state.tags, assignments: state.assignments.filter((item) => !item.removedAt && (!contactId || item.contactId === contactId)) });
     if (resource === "fields") return json({ fields: state.fields, values: state.values });
     if (resource === "segments") return json({ segments: state.segments });
     return json({ error: "unknown_resource" }, 400);
   }
-  const client = createSupabaseAdminClient();
-  if (!client) return json({ error: "database_not_configured" }, 503);
+  if (contactId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(contactId)) {
+    return json({ error: "invalid_contact_id" }, 400);
+  }
   const auth = await getInboxAuthContext();
   if (!auth) return json({ error: "unauthorized" }, 401);
-  const liveTags = await listLiveTags(client, auth.organizationId);
-  if (resource === "tags") return json(liveTags);
+  const client = createSupabaseAdminClient();
+  if (!client) return json({ error: "database_not_configured" }, 503);
+  if (resource === "tags") return json(await listLiveTags(client, auth.organizationId, contactId));
   const table = resource === "tags" ? "tags" : resource === "fields" ? "custom_field_definitions" : resource === "segments" ? "segments" : null;
   if (!table) return json({ error: "unknown_resource" }, 400);
   const { data, error } = await client.from(table).select("*").eq("organization_id", auth.organizationId).order("created_at", { ascending: false });

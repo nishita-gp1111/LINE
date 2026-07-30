@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getContact, listContactMessages } from "@/lib/contacts/queries";
+import { friendStatusPresentation } from "@/lib/contacts/status";
 import { FoundationContactClient } from "./foundation-contact-client";
 
 function formatDate(value: string | null): string {
@@ -13,15 +14,18 @@ export default async function ContactDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const contact = await getContact(id);
+  const [contact, messages] = await Promise.all([
+    getContact(id),
+    listContactMessages(id)
+  ]);
   if (!contact) notFound();
-  const messages = await listContactMessages(id);
+  const friendStatus = friendStatusPresentation(contact.friendStatus);
 
   return (
     <main className="min-h-screen px-6 py-8 sm:px-10">
       <div className="mx-auto max-w-5xl">
         <Link href="/admin/contacts" className="text-sm font-bold text-moss hover:underline">← 顧客一覧</Link>
-        <section className="mt-5 rounded-xl border border-line bg-white p-6">
+        <section className={`mt-5 rounded-xl border bg-white p-6 ${friendStatus.isBlocked ? "border-rose-300 shadow-[inset_5px_0_0_#e11d48]" : "border-line"}`}>
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
             <div
               className="grid size-20 shrink-0 place-items-center rounded-full border border-line bg-paper bg-cover bg-center text-2xl font-black text-moss"
@@ -33,8 +37,11 @@ export default async function ContactDetailPage({
             </div>
             <div>
               <p className="text-sm font-bold text-moss">顧客詳細</p>
-              <h1 className="mt-1 text-3xl font-black">{contact.displayName || "名称未取得"}</h1>
-              <p className="mt-2 text-sm text-ink/60">友だち状態: {contact.friendStatus}</p>
+              <div className="mt-1 flex flex-wrap items-center gap-3">
+                <h1 className="text-3xl font-black">{contact.displayName || "名称未取得"}</h1>
+                <span title={friendStatus.detail} className={`rounded-full px-3 py-1 text-xs font-black ${friendStatus.isBlocked ? "bg-rose-600 text-white" : contact.friendStatus === "following" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{friendStatus.label}</span>
+              </div>
+              <p className={`mt-2 text-sm font-bold ${friendStatus.isBlocked ? "text-rose-700" : "text-ink/60"}`}>{friendStatus.detail}</p>
             </div>
           </div>
           <dl className="mt-7 grid gap-4 sm:grid-cols-2">

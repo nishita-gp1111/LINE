@@ -34,12 +34,17 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const search = one(params.q) || "";
   const requestedPage = Number(one(params.page) || "1");
   const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  const result = await data.store.listConversations({ organizationId: data.auth.organizationId, profileId: data.auth.profileId, filter, search, page, pageSize: 50, ownerSearchLineUserId: data.auth.role === "owner" || data.auth.role === "admin" ? one(params.lineUserId) : undefined });
+  const resultPromise = data.store.listConversations({ organizationId: data.auth.organizationId, profileId: data.auth.profileId, filter, search, page, pageSize: 50, ownerSearchLineUserId: data.auth.role === "owner" || data.auth.role === "admin" ? one(params.lineUserId) : undefined });
+  const quickRepliesPromise = data.store.listQuickReplies(data.auth.organizationId);
+  const profilesPromise = data.store.listProfiles(data.auth.organizationId);
+  const result = await resultPromise;
   const selectedId = one(params.conversation) || result.items[0]?.conversation.id;
-  const detail = selectedId ? await data.store.getConversation(data.auth.organizationId, selectedId, data.auth.profileId) : null;
+  const [detail, quickReplies, profiles] = await Promise.all([
+    selectedId ? data.store.getConversation(data.auth.organizationId, selectedId, data.auth.profileId) : Promise.resolve(null),
+    quickRepliesPromise,
+    profilesPromise
+  ]);
   const safeDetail = detail ? { ...detail, messages: detail.messages.map(toPublicMessage) } : null;
-  const quickReplies = await data.store.listQuickReplies(data.auth.organizationId);
-  const profiles = await data.store.listProfiles(data.auth.organizationId);
   const env = getServerEnv();
   const canSend = data.auth.role !== "viewer" && (env.MOCK_LINE_API || env.LINE_MANUAL_SEND_ENABLED);
 

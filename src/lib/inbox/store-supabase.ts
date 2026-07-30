@@ -40,16 +40,23 @@ function mapQuick(row: Row): QuickReplyTemplate {
 }
 
 export class SupabaseInboxStore implements InboxStore {
+  private profilesPromise: Promise<Map<string, ProfileSummary>> | null = null;
+
   constructor(private readonly client: SupabaseClient, private readonly organizationId: string) {}
 
   private async profileMap(): Promise<Map<string, ProfileSummary>> {
-    const { data } = await this.client.from("organization_members").select("role, profiles(id, email, display_name)").eq("organization_id", this.organizationId);
-    const profiles = new Map<string, ProfileSummary>();
-    for (const row of (data || []) as Row[]) {
-      const profile = Array.isArray(row.profiles) ? row.profiles[0] as Row | undefined : row.profiles as Row | undefined;
-      if (profile) profiles.set(String(profile.id), mapProfile(profile, String(row.role)));
+    if (!this.profilesPromise) {
+      this.profilesPromise = (async () => {
+        const { data } = await this.client.from("organization_members").select("role, profiles(id, email, display_name)").eq("organization_id", this.organizationId);
+        const profiles = new Map<string, ProfileSummary>();
+        for (const row of (data || []) as Row[]) {
+          const profile = Array.isArray(row.profiles) ? row.profiles[0] as Row | undefined : row.profiles as Row | undefined;
+          if (profile) profiles.set(String(profile.id), mapProfile(profile, String(row.role)));
+        }
+        return profiles;
+      })();
     }
-    return profiles;
+    return this.profilesPromise;
   }
 
   private async readState(conversationId: string, profileId: string): Promise<ConversationReadState> {
@@ -86,11 +93,13 @@ export class SupabaseInboxStore implements InboxStore {
     const rows = (data || []) as Row[];
     const conversationIds = rows.map((row) => String(row.id));
     const contactIds = rows.map((row) => String(row.contact_id));
-    const contactsResponse = contactIds.length ? await this.client.from("contacts").select("*").eq("organization_id", query.organizationId).in("id", contactIds) : { data: [] };
+    const [contactsResponse, statesResponse, profiles] = await Promise.all([
+      contactIds.length ? this.client.from("contacts").select("*").eq("organization_id", query.organizationId).in("id", contactIds) : Promise.resolve({ data: [] }),
+      conversationIds.length ? this.client.from("conversation_read_states").select("*").eq("organization_id", query.organizationId).eq("profile_id", query.profileId).in("conversation_id", conversationIds) : Promise.resolve({ data: [] }),
+      this.profileMap()
+    ]);
     const contacts = new Map<string, ContactRecord>((((contactsResponse.data || []) as Row[]).map((row) => [String(row.id), mapContact(row)])));
-    const statesResponse = conversationIds.length ? await this.client.from("conversation_read_states").select("*").eq("organization_id", query.organizationId).eq("profile_id", query.profileId).in("conversation_id", conversationIds) : { data: [] };
     const states = new Map<string, ConversationReadState>((((statesResponse.data || []) as Row[]).map((row) => [String(row.conversation_id), mapReadState(row, query.organizationId, String(row.conversation_id), query.profileId)])));
-    const profiles = await this.profileMap();
     const items = rows.map((row) => {
       const conversation = mapConversation(row);
       const contact = contacts.get(conversation.contactId);
@@ -104,15 +113,16 @@ export class SupabaseInboxStore implements InboxStore {
     const { data: conversationRow, error } = await this.client.from("conversations").select("*").eq("organization_id", organizationId).eq("id", conversationId).maybeSingle();
     if (error || !conversationRow) return null;
     const conversation = mapConversation(conversationRow as Row);
-    const [contactResponse, messageResponse, noteResponse, profiles] = await Promise.all([
+    const [contactResponse, messageResponse, noteResponse, profiles, readState] = await Promise.all([
       this.client.from("contacts").select("*").eq("organization_id", organizationId).eq("id", conversation.contactId).single(),
       this.client.from("messages").select("*").eq("organization_id", organizationId).eq("conversation_id", conversationId).order("line_event_timestamp", { ascending: true }).limit(200),
       this.client.from("conversation_notes").select("*").eq("organization_id", organizationId).eq("conversation_id", conversationId).is("deleted_at", null).order("created_at", { ascending: true }),
-      this.profileMap()
+      this.profileMap(),
+      this.readState(conversationId, profileId)
     ]);
     if (!contactResponse.data) return null;
     const contact = mapContact(contactResponse.data as Row);
-    return { conversation, contact, readState: await this.readState(conversationId, profileId), assignee: conversation.assigneeProfileId ? profiles.get(conversation.assigneeProfileId) || null : null, messages: ((messageResponse.data || []) as Row[]).map(mapMessage), notes: ((noteResponse.data || []) as Row[]).map((row) => mapNote(row, profiles)) };
+    return { conversation, contact, readState, assignee: conversation.assigneeProfileId ? profiles.get(conversation.assigneeProfileId) || null : null, messages: ((messageResponse.data || []) as Row[]).map(mapMessage), notes: ((noteResponse.data || []) as Row[]).map((row) => mapNote(row, profiles)) };
   }
 
   async markConversationRead(organizationId: string, conversationId: string, profileId: string, lastMessageId?: string | null): Promise<ConversationReadState> {
@@ -201,9 +211,8 @@ export class SupabaseInboxStore implements InboxStore {
   }
 
   async listProfiles(organizationId: string): Promise<ProfileSummary[]> {
-    const { data, error } = await this.client.from("organization_members").select("role, profiles(id, email, display_name)").eq("organization_id", organizationId);
-    if (error) throw new Error("担当者を取得できませんでした。");
-    return ((data || []) as Row[]).flatMap((row) => { const profile = Array.isArray(row.profiles) ? row.profiles[0] as Row | undefined : row.profiles as Row | undefined; return profile ? [mapProfile(profile, String(row.role))] : []; });
+    if (organizationId !== this.organizationId) throw new Error("担当者を取得できませんでした。");
+    return [...(await this.profileMap()).values()];
   }
 
   async authorizeControlledRecipient(organizationId: string, lineUserId: string): Promise<{ allowed: boolean; reason: string | null }> {

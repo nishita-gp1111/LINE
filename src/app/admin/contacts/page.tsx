@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listContacts } from "@/lib/contacts/queries";
+import { friendStatusPresentation } from "@/lib/contacts/status";
 import type { FriendStatus } from "@/lib/webhook/store";
 
 const statusOptions: Array<{ value: FriendStatus | ""; label: string }> = [
@@ -15,10 +16,6 @@ function one(value: string | string[] | undefined): string | undefined {
 
 function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }) : "—";
-}
-
-function statusLabel(status: FriendStatus): string {
-  return status === "following" ? "友だち" : status === "blocked" ? "ブロック" : "未確認";
 }
 
 export default async function ContactsPage({
@@ -66,17 +63,29 @@ export default async function ContactsPage({
               <tr>{["表示名", "友だち状態", "初回確認", "友だち追加", "最終メッセージ", "更新", "詳細"].map((label) => <th key={label} className="px-4 py-3 font-bold">{label}</th>)}</tr>
             </thead>
             <tbody>
-              {result.items.map((contact) => (
-                <tr key={contact.id} className="border-b border-line last:border-0">
-                  <td className="px-4 py-4 font-bold">{contact.displayName || "名称未取得"}</td>
-                  <td className="px-4 py-4">{statusLabel(contact.friendStatus)}</td>
+              {result.items.map((contact) => {
+                const friendStatus = friendStatusPresentation(contact.friendStatus);
+                return (
+                <tr key={contact.id} className={`border-b border-line last:border-0 ${friendStatus.isBlocked ? "bg-rose-50/80" : ""}`}>
+                  <td className="px-4 py-4 font-bold">
+                    <span className="flex items-center gap-2">
+                      <span>{contact.displayName || "名称未取得"}</span>
+                      {friendStatus.isBlocked ? <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-black text-white">ブロック</span> : null}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <span title={friendStatus.detail} className={`inline-flex rounded-full px-2.5 py-1 text-xs font-black ${friendStatus.isBlocked ? "bg-rose-600 text-white" : contact.friendStatus === "following" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                      {friendStatus.label}
+                    </span>
+                  </td>
                   <td className="px-4 py-4 text-ink/65">{formatDate(contact.firstSeenAt)}</td>
                   <td className="px-4 py-4 text-ink/65">{formatDate(contact.followedAt)}</td>
                   <td className="px-4 py-4 text-ink/65">{formatDate(contact.lastMessageAt)}</td>
                   <td className="px-4 py-4 text-ink/65">{formatDate(contact.updatedAt)}</td>
                   <td className="px-4 py-4"><Link className="font-bold text-moss hover:underline" href={`/admin/contacts/${contact.id}`}>詳細</Link></td>
                 </tr>
-              ))}
+                );
+              })}
               {!result.items.length ? <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-ink/55">顧客データはまだありません。</td></tr> : null}
             </tbody>
           </table>
