@@ -21,7 +21,7 @@ export function ContactTagsPanel({ contactId, compact = false }: { contactId: st
   const [working, setWorking] = useState(false);
 
   async function load() {
-    const response = await fetch("/api/milestone3/foundation?resource=tags");
+    const response = await fetch(`/api/milestone3/foundation?resource=tags&contactId=${encodeURIComponent(contactId)}`);
     const data = await response.json() as { tags?: Tag[]; assignments?: Assignment[] };
     setTags(data.tags ?? []);
     setAssignments((data.assignments ?? []).filter((item) => item.contactId === contactId));

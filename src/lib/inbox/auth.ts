@@ -27,11 +27,20 @@ export async function getInboxAuthContext(): Promise<InboxAuthContext | null> {
   if (getAuthMode() === "mock") {
     return { profileId: user.id, organizationId: env.LINE_ORGANIZATION_ID || MOCK_ORGANIZATION_ID, role: "owner", profile: { id: user.id, displayName: user.name || "LINE CRMオーナー", email: user.email || "", role: "owner" } };
   }
-  const bootstrapped = await ensureInitialOrganization(user);
-  const organizationId = bootstrapped?.organizationId || env.LINE_ORGANIZATION_ID || MOCK_ORGANIZATION_ID;
+  const configuredOrganizationId = env.LINE_ORGANIZATION_ID || MOCK_ORGANIZATION_ID;
   const client = createSupabaseAdminClient();
   if (!client) return null;
-  const { data, error } = await client.from("organization_members").select("role, profiles(id, email, display_name)").eq("organization_id", organizationId).eq("profile_id", user.id).maybeSingle();
+  const membership = (organizationId: string) => client.from("organization_members").select("role, profiles(id, email, display_name)").eq("organization_id", organizationId).eq("profile_id", user.id).maybeSingle();
+  let organizationId = configuredOrganizationId;
+  let membershipResult = await membership(organizationId);
+  if (membershipResult.error) return null;
+  if (!membershipResult.data) {
+    const bootstrapped = await ensureInitialOrganization(user);
+    if (!bootstrapped) return null;
+    organizationId = bootstrapped.organizationId;
+    membershipResult = await membership(organizationId);
+  }
+  const { data, error } = membershipResult;
   if (error || !data) return null;
   const profile = Array.isArray(data.profiles) ? data.profiles[0] : data.profiles;
   return { profileId: user.id, organizationId, role: normalizeRole(String(data.role)), profile: { id: user.id, displayName: String(profile?.display_name || user.name || user.email || "管理者"), email: String(profile?.email || user.email || ""), role: normalizeRole(String(data.role)) } };

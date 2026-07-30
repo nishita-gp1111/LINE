@@ -161,10 +161,12 @@ export async function listLiveContacts(client: SupabaseClient, organizationId: s
     .map((value) => ({ id: row(value).id, displayName: row(value).display_name || "名称未取得", friendStatus: row(value).friend_status, lastMessageAt: row(value).last_message_at }));
 }
 
-export async function listLiveTags(client: SupabaseClient, organizationId: string): Promise<{ tags: Row[]; assignments: Row[] }> {
+export async function listLiveTags(client: SupabaseClient, organizationId: string, contactId?: string): Promise<{ tags: Row[]; assignments: Row[] }> {
+  let assignmentRequest = client.from("contact_tag_assignments").select("*").eq("organization_id", organizationId).is("removed_at", null).order("assigned_at", { ascending: false });
+  if (contactId) assignmentRequest = assignmentRequest.eq("contact_id", contactId);
   const [tags, assignments] = await Promise.all([
     client.from("tags").select("*").eq("organization_id", organizationId).eq("is_active", true).order("created_at", { ascending: false }),
-    client.from("contact_tag_assignments").select("*").eq("organization_id", organizationId).is("removed_at", null).order("assigned_at", { ascending: false })
+    assignmentRequest
   ]);
   if (tags.error || assignments.error) throw new Error("タグの取得に失敗しました。");
   return {
