@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getInboxAuthContext, isTrustedOrigin } from "@/lib/inbox/auth";
 import { retryMessageSchema } from "@/lib/inbox/schemas";
 import { getInboxStore } from "@/lib/inbox/store";
-import { sendInboxTextMessage } from "@/lib/inbox/send-service";
+import { sendInboxAttachmentMessage, sendInboxTextMessage } from "@/lib/inbox/send-service";
 import { toPublicMessage } from "@/lib/inbox/public";
 
 export const runtime = "nodejs";
@@ -18,7 +18,12 @@ export async function POST(request: Request) {
   try {
     const conversationId = parsed.data.conversationId || (await findConversationForMessage(store, auth.organizationId, auth.profileId, parsed.data.messageId));
     if (!conversationId) return NextResponse.json({ ok: false, error: "再試行対象の会話が見つかりません。" }, { status: 404 });
-    const result = await sendInboxTextMessage({ store, organizationId: auth.organizationId, profileId: auth.profileId, role: auth.role, conversationId, messageId: parsed.data.messageId });
+    const detail = await store.getConversation(auth.organizationId, conversationId, auth.profileId);
+    const message = detail?.messages.find((item) => item.id === parsed.data.messageId);
+    if (!message) return NextResponse.json({ ok: false, error: "再試行対象が見つかりません。" }, { status: 404 });
+    const result = ["image", "file"].includes(message.messageType)
+      ? await sendInboxAttachmentMessage({ store, organizationId: auth.organizationId, profileId: auth.profileId, role: auth.role, conversationId, messageId: parsed.data.messageId })
+      : await sendInboxTextMessage({ store, organizationId: auth.organizationId, profileId: auth.profileId, role: auth.role, conversationId, messageId: parsed.data.messageId });
     await store.recordAudit({ organizationId: auth.organizationId, actorProfileId: auth.profileId, action: "message.retry_requested", resourceType: "message", resourceId: parsed.data.messageId });
     return NextResponse.json({ ok: true, message: toPublicMessage(result.message), reused: result.reused });
   } catch (error) {

@@ -9,6 +9,7 @@ import type {
   ConversationUpdate,
   InboxRole,
   InboxStore,
+  MessageAttachmentRecord,
   OutboundCreateInput,
   OutboundSendUpdate,
   ProfileSummary,
@@ -154,6 +155,7 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
   private readonly events = new Map<string, MockWebhookEvent>();
   private readonly contacts = new Map<string, ContactRecord>();
   private readonly messages = new Map<string, MessageRecord>();
+  private readonly attachments = new Map<string, MessageAttachmentRecord>();
   private readonly conversations = new Map<string, ConversationRecord>();
   private readonly readStates = new Map<string, ConversationReadState>();
   private readonly notes = new Map<string, ConversationNote>();
@@ -604,9 +606,17 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
     if (existing) return { created: false, message: existing };
     if ([...this.messages.values()].some((message) => message.organizationId === input.organizationId && message.retryKey === input.retryKey)) throw new Error("Retry Keyが既に使用されています。");
     const now = new Date().toISOString();
-    const message: MessageRecord = { id: `mock-message-${randomUUID()}`, organizationId: input.organizationId, contactId: input.contactId, direction: "outbound", source: "line", lineMessageId: null, lineRequestId: null, messageType: "text", textContent: input.textContent, payloadJson: { type: "text" }, status: "queued", conversationId: input.conversationId, clientRequestId: input.clientRequestId, retryKey: input.retryKey, lineAcceptedRequestId: null, lineSentMessageId: null, sentByProfileId: input.sentByProfileId, attemptCount: 0, errorClass: null, errorCode: null, errorMessageSafe: null, acceptedAt: null, failedAt: null, cancelledAt: null, lineEventTimestamp: now, deletedAt: null, createdAt: now, updatedAt: now };
+    const message: MessageRecord = { id: `mock-message-${randomUUID()}`, organizationId: input.organizationId, contactId: input.contactId, direction: "outbound", source: "line", lineMessageId: null, lineRequestId: null, messageType: input.attachment?.attachmentType === "image" ? "image" : input.attachment ? "file" : "text", textContent: input.textContent, payloadJson: input.attachment ? { type: input.attachment.attachmentType === "image" ? "image" : "file", attachmentId: input.attachment.id, attachmentType: input.attachment.attachmentType, fileName: input.attachment.fileName, mimeType: input.attachment.mimeType, sizeBytes: input.attachment.sizeBytes } : { type: "text" }, status: "queued", conversationId: input.conversationId, clientRequestId: input.clientRequestId, retryKey: input.retryKey, lineAcceptedRequestId: null, lineSentMessageId: null, sentByProfileId: input.sentByProfileId, attemptCount: 0, errorClass: null, errorCode: null, errorMessageSafe: null, acceptedAt: null, failedAt: null, cancelledAt: null, lineEventTimestamp: now, deletedAt: null, createdAt: now, updatedAt: now };
     this.messages.set(message.id, message);
+    if (input.attachment) {
+      this.attachments.set(message.id, { ...input.attachment, messageId: message.id, createdAt: now, deletedAt: null });
+    }
     return { created: true, message };
+  }
+
+  async getMessageAttachment(organizationId: string, messageId: string): Promise<MessageAttachmentRecord | null> {
+    const attachment = this.attachments.get(messageId);
+    return attachment?.organizationId === organizationId && !attachment.deletedAt ? attachment : null;
   }
 
   async claimOutboundMessage(organizationId: string, messageId: string, profileId: string): Promise<MessageRecord> {

@@ -95,7 +95,10 @@ export function launchBlockers(options: { allowedRecipientCount?: number } = {})
     if (!env.LINE_BULK_SEND_ENABLED) blockers.push("タグ配信を利用するにはLINE_BULK_SEND_ENABLEDをtrueにしてください。");
     if (env.LINE_SCHEDULED_SEND_ENABLED) blockers.push("LINE_SCHEDULED_SEND_ENABLEDをfalseにしてください。");
     if (env.LINE_AUTO_REPLY_ENABLED) blockers.push("LINE_AUTO_REPLY_ENABLEDをfalseにしてください。");
-    if (env.LINE_MEDIA_SEND_ENABLED) blockers.push("LINE_MEDIA_SEND_ENABLEDをfalseにしてください。");
+    if (!env.LINE_MEDIA_SEND_ENABLED) blockers.push("画像・PDF送信を利用するにはLINE_MEDIA_SEND_ENABLEDをtrueにしてください。");
+    if (!env.MEDIA_DOWNLOAD_SIGNING_SECRET || env.MEDIA_DOWNLOAD_SIGNING_SECRET.length < 32) {
+      blockers.push("MEDIA_DOWNLOAD_SIGNING_SECRETを32文字以上で設定してください。");
+    }
   }
   return blockers;
 }

@@ -33,6 +33,21 @@ export interface LinePushClient {
   pushTextMessage(input: LinePushTextInput): Promise<LinePushResult>;
 }
 
+export type LinePushMessageObject =
+  | { type: "text"; text: string }
+  | { type: "image"; originalContentUrl: string; previewImageUrl: string }
+  | { type: "flex"; altText: string; contents: Record<string, unknown> };
+
+export type LinePushMessageInput = {
+  lineUserId: string;
+  message: LinePushMessageObject;
+  retryKey: string;
+};
+
+export interface LineMessagePushClient {
+  pushMessage(input: LinePushMessageInput): Promise<LinePushResult>;
+}
+
 export class LineSendConfigurationError extends Error {
   constructor(message: string) {
     super(message);
@@ -59,10 +74,18 @@ async function parseSentMessageId(response: Response): Promise<string | null> {
   }
 }
 
-export class LiveLinePushClient implements LinePushClient {
+export class LiveLinePushClient implements LinePushClient, LineMessagePushClient {
   constructor(private readonly accessToken: string) {}
 
   async pushTextMessage(input: LinePushTextInput): Promise<LinePushResult> {
+    return this.pushMessage({
+      lineUserId: input.lineUserId,
+      message: { type: "text", text: input.text },
+      retryKey: input.retryKey
+    });
+  }
+
+  async pushMessage(input: LinePushMessageInput): Promise<LinePushResult> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
     try {
@@ -74,7 +97,7 @@ export class LiveLinePushClient implements LinePushClient {
           "Content-Type": "application/json",
           "X-Line-Retry-Key": input.retryKey
         },
-        body: JSON.stringify({ to: input.lineUserId, messages: [{ type: "text", text: input.text }] }),
+        body: JSON.stringify({ to: input.lineUserId, messages: [input.message] }),
         signal: controller.signal
       });
       const lineRequestId = header(response, "x-line-request-id");
@@ -98,10 +121,14 @@ export class LiveLinePushClient implements LinePushClient {
   }
 }
 
-export class MockLinePushClient implements LinePushClient {
+export class MockLinePushClient implements LinePushClient, LineMessagePushClient {
   constructor(private readonly outcome: "success" | "409" | "429" | "500" | "timeout") {}
 
   async pushTextMessage(input: LinePushTextInput): Promise<LinePushResult> {
+    return this.pushMessage({ lineUserId: input.lineUserId, message: { type: "text", text: input.text }, retryKey: input.retryKey });
+  }
+
+  async pushMessage(input: LinePushMessageInput): Promise<LinePushResult> {
     const lineRequestId = `mock-request-${input.retryKey.slice(0, 8)}`;
     if (this.outcome === "timeout") return { accepted: false, retryable: true, httpStatus: null, errorClass: "timeout", errorCode: null, safeMessage: "Mock送信をタイムアウトとして扱いました。", lineRequestId: null, lineAcceptedRequestId: null };
     if (this.outcome === "409") return { accepted: true, lineRequestId, lineAcceptedRequestId: `mock-accepted-${input.retryKey.slice(0, 8)}`, lineSentMessageId: null };
@@ -112,6 +139,13 @@ export class MockLinePushClient implements LinePushClient {
 }
 
 export function createLinePushClient(): LinePushClient {
+  const env = getServerEnv();
+  if (env.MOCK_LINE_API) return new MockLinePushClient(env.MOCK_LINE_SEND_OUTCOME);
+  if (!env.LINE_CHANNEL_ACCESS_TOKEN) throw new LineSendConfigurationError("LINE_CHANNEL_ACCESS_TOKENが設定されていません。");
+  return new LiveLinePushClient(env.LINE_CHANNEL_ACCESS_TOKEN);
+}
+
+export function createLineMessagePushClient(): LineMessagePushClient {
   const env = getServerEnv();
   if (env.MOCK_LINE_API) return new MockLinePushClient(env.MOCK_LINE_SEND_OUTCOME);
   if (!env.LINE_CHANNEL_ACCESS_TOKEN) throw new LineSendConfigurationError("LINE_CHANNEL_ACCESS_TOKENが設定されていません。");

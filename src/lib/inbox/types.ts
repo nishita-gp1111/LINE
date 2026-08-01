@@ -103,7 +103,34 @@ export type OutboundCreateInput = {
   clientRequestId: string;
   retryKey: string;
   sentByProfileId: string;
+  attachment?: OutboundAttachmentCreateInput;
 };
+
+export type MessageAttachmentType = "image" | "pdf";
+
+export type MessageAttachmentRecord = {
+  id: string;
+  organizationId: string;
+  messageId: string;
+  conversationId: string;
+  contactId: string;
+  attachmentType: MessageAttachmentType;
+  fileName: string;
+  mimeType: "image/jpeg" | "image/png" | "application/pdf";
+  sizeBytes: number;
+  storageBucket: string;
+  storagePath: string;
+  previewStoragePath: string | null;
+  checksumSha256: string;
+  createdByProfileId: string;
+  createdAt: string;
+  deletedAt: string | null;
+};
+
+export type OutboundAttachmentCreateInput = Omit<
+  MessageAttachmentRecord,
+  "messageId" | "createdAt" | "deletedAt"
+>;
 
 export type OutboundSendUpdate = {
   status: "sending" | "accepted" | "retryable_failed" | "permanently_failed" | "cancelled";
@@ -136,6 +163,7 @@ export type InboxStore = {
   authorizeControlledRecipient?(organizationId: string, lineUserId: string): Promise<{ allowed: boolean; reason: string | null }>;
   findOutboundByClientRequest(organizationId: string, clientRequestId: string): Promise<MessageRecord | null>;
   createOutboundMessage(input: OutboundCreateInput): Promise<{ created: boolean; message: MessageRecord }>;
+  getMessageAttachment(organizationId: string, messageId: string): Promise<MessageAttachmentRecord | null>;
   claimOutboundMessage(organizationId: string, messageId: string, profileId: string): Promise<MessageRecord>;
   updateOutboundMessage(organizationId: string, messageId: string, update: OutboundSendUpdate): Promise<MessageRecord>;
   recordOutboundAttempt(input: { organizationId: string; messageId: string; attemptNumber: number; httpStatus?: number | null; lineRequestId?: string | null; lineAcceptedRequestId?: string | null; errorClass?: string | null; errorMessageSafe?: string | null }): Promise<void>;

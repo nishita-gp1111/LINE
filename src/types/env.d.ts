@@ -49,7 +49,9 @@ declare namespace NodeJS {
     MAX_CAMPAIGN_RECIPIENTS?: string;
     MAX_MULTICAST_BATCH_SIZE?: string;
     LINE_MEDIA_BUCKET?: string;
+    MEDIA_DOWNLOAD_SIGNING_SECRET?: string;
     MEDIA_IMAGE_MAX_BYTES?: string;
+    MEDIA_PDF_MAX_BYTES?: string;
     MEDIA_VIDEO_MAX_BYTES?: string;
     MEDIA_AUDIO_MAX_BYTES?: string;
     MEDIA_STORAGE_WARNING_BYTES?: string;

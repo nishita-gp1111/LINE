@@ -3,7 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { evaluateControlledRecipient } from "@/lib/launch/controlled-recipient";
 import type { ContactRecord, MessageRecord } from "@/lib/webhook/store";
-import type { ConversationDetail, ConversationListItem, ConversationListQuery, ConversationNote, ConversationReadState, ConversationRecord, ConversationUpdate, InboxRole, InboxStore, OutboundCreateInput, OutboundSendUpdate, ProfileSummary, QuickReplyTemplate } from "@/lib/inbox/types";
+import type { ConversationDetail, ConversationListItem, ConversationListQuery, ConversationNote, ConversationReadState, ConversationRecord, ConversationUpdate, InboxRole, InboxStore, MessageAttachmentRecord, OutboundCreateInput, OutboundSendUpdate, ProfileSummary, QuickReplyTemplate } from "@/lib/inbox/types";
 
 type Row = Record<string, unknown>;
 
@@ -17,6 +17,27 @@ function mapContact(row: Row): ContactRecord {
 
 function mapMessage(row: Row): MessageRecord {
   return { id: String(row.id), organizationId: String(row.organization_id), contactId: String(row.contact_id), direction: row.direction as MessageRecord["direction"], source: "line", lineMessageId: asString(row.line_message_id), lineRequestId: asString(row.line_request_id), messageType: String(row.message_type), textContent: asString(row.text_content), payloadJson: (row.payload_json as Record<string, unknown>) || {}, status: row.status as MessageRecord["status"], conversationId: asString(row.conversation_id), clientRequestId: asString(row.client_request_id), retryKey: asString(row.retry_key), lineAcceptedRequestId: asString(row.line_accepted_request_id), lineSentMessageId: asString(row.line_sent_message_id), sentByProfileId: asString(row.sent_by_profile_id), attemptCount: Number(row.attempt_count || 0), errorClass: asString(row.error_class), errorCode: asString(row.error_code), errorMessageSafe: asString(row.error_message_safe), acceptedAt: asString(row.accepted_at), failedAt: asString(row.failed_at), cancelledAt: asString(row.cancelled_at), lineEventTimestamp: String(row.line_event_timestamp), deletedAt: asString(row.deleted_at), createdAt: String(row.created_at), updatedAt: String(row.updated_at) };
+}
+
+function mapAttachment(row: Row): MessageAttachmentRecord {
+  return {
+    id: String(row.id),
+    organizationId: String(row.organization_id),
+    messageId: String(row.message_id),
+    conversationId: String(row.conversation_id),
+    contactId: String(row.contact_id),
+    attachmentType: row.attachment_type as MessageAttachmentRecord["attachmentType"],
+    fileName: String(row.file_name),
+    mimeType: row.mime_type as MessageAttachmentRecord["mimeType"],
+    sizeBytes: Number(row.size_bytes),
+    storageBucket: String(row.storage_bucket),
+    storagePath: String(row.storage_path),
+    previewStoragePath: asString(row.preview_storage_path),
+    checksumSha256: String(row.checksum_sha256),
+    createdByProfileId: String(row.created_by_profile_id),
+    createdAt: String(row.created_at),
+    deletedAt: asString(row.deleted_at)
+  };
 }
 
 function mapConversation(row: Row): ConversationRecord {
@@ -225,12 +246,45 @@ export class SupabaseInboxStore implements InboxStore {
   }
 
   async createOutboundMessage(input: OutboundCreateInput): Promise<{ created: boolean; message: MessageRecord }> {
-    const { data, error } = await this.client.rpc("create_outbound_line_message", { target_organization_id: input.organizationId, target_conversation_id: input.conversationId, target_contact_id: input.contactId, target_text_content: input.textContent, target_client_request_id: input.clientRequestId, target_retry_key: input.retryKey, target_sent_by_profile_id: input.sentByProfileId });
+    const request = input.attachment
+      ? this.client.rpc("create_outbound_line_attachment_message", {
+        target_organization_id: input.organizationId,
+        target_conversation_id: input.conversationId,
+        target_contact_id: input.contactId,
+        target_message_type: input.attachment.attachmentType === "image" ? "image" : "file",
+        target_text_content: input.textContent,
+        target_client_request_id: input.clientRequestId,
+        target_retry_key: input.retryKey,
+        target_sent_by_profile_id: input.sentByProfileId,
+        target_attachment_id: input.attachment.id,
+        target_attachment_type: input.attachment.attachmentType,
+        target_file_name: input.attachment.fileName,
+        target_mime_type: input.attachment.mimeType,
+        target_size_bytes: input.attachment.sizeBytes,
+        target_storage_bucket: input.attachment.storageBucket,
+        target_storage_path: input.attachment.storagePath,
+        target_preview_storage_path: input.attachment.previewStoragePath,
+        target_checksum_sha256: input.attachment.checksumSha256
+      })
+      : this.client.rpc("create_outbound_line_message", { target_organization_id: input.organizationId, target_conversation_id: input.conversationId, target_contact_id: input.contactId, target_text_content: input.textContent, target_client_request_id: input.clientRequestId, target_retry_key: input.retryKey, target_sent_by_profile_id: input.sentByProfileId });
+    const { data, error } = await request;
     if (error) throw new Error("送信メッセージを作成できませんでした。");
     const row = (Array.isArray(data) ? data[0] : data) as Row;
     const { data: message, error: messageError } = await this.client.from("messages").select("*").eq("organization_id", input.organizationId).eq("id", row.message_id).single();
     if (messageError || !message) throw new Error("送信メッセージを取得できませんでした。");
     return { created: Boolean(row.created), message: mapMessage(message as Row) };
+  }
+
+  async getMessageAttachment(organizationId: string, messageId: string): Promise<MessageAttachmentRecord | null> {
+    const { data, error } = await this.client
+      .from("message_attachments")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("message_id", messageId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (error) throw new Error("添付ファイルを取得できませんでした。");
+    return data ? mapAttachment(data as Row) : null;
   }
 
   async claimOutboundMessage(organizationId: string, messageId: string, profileId: string): Promise<MessageRecord> {

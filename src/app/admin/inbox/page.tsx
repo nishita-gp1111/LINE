@@ -47,6 +47,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const safeDetail = detail ? { ...detail, messages: detail.messages.map(toPublicMessage) } : null;
   const env = getServerEnv();
   const canSend = data.auth.role !== "viewer" && (env.MOCK_LINE_API || env.LINE_MANUAL_SEND_ENABLED);
+  const canSendMedia = canSend && Boolean(env.NEXT_PUBLIC_APP_URL) && Boolean(env.MEDIA_DOWNLOAD_SIGNING_SECRET) && (env.MOCK_LINE_API || env.LINE_MEDIA_SEND_ENABLED);
 
   return (
     <main className="min-h-[calc(100vh-4rem)] p-3 sm:p-4">
@@ -59,7 +60,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           </div>
           <div className="flex gap-2"><Link href="/admin/contacts" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">顧客一覧</Link><Link href="/admin/settings/quick-replies" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">クイック返信設定</Link></div>
         </div>
-        <InboxClient items={result.items} total={result.total} page={result.page} pageSize={result.pageSize} filters={filters} selected={safeDetail} quickReplies={quickReplies} profiles={profiles} authProfileId={data.auth.profileId} role={data.auth.role} filter={filter} search={search} canSend={canSend} mockMode={env.MOCK_LINE_API} />
+        <InboxClient items={result.items} total={result.total} page={result.page} pageSize={result.pageSize} filters={filters} selected={safeDetail} quickReplies={quickReplies} profiles={profiles} authProfileId={data.auth.profileId} role={data.auth.role} filter={filter} search={search} canSend={canSend} canSendMedia={canSendMedia} mockMode={env.MOCK_LINE_API} />
       </div>
     </main>
   );
