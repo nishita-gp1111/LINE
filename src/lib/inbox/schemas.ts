@@ -20,6 +20,11 @@ export const sendMessageSchema = z.object({
   clientRequestId: clientRequestIdSchema
 });
 
+export const sendAttachmentSchema = z.object({
+  conversationId: conversationIdSchema,
+  clientRequestId: clientRequestIdSchema
+});
+
 export const retryMessageSchema = z.object({ messageId: conversationIdSchema, conversationId: conversationIdSchema.optional() });
 
 export const quickReplyCreateSchema = z.object({ name: z.string().trim().min(1).max(100), textContent: textMessageSchema, sortOrder: z.number().int().min(0).max(10000) });

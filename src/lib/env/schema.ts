@@ -121,7 +121,9 @@ export const envSchema = z.object({
   MAX_CAMPAIGN_RECIPIENTS: integerEnv(50000),
   MAX_MULTICAST_BATCH_SIZE: integerEnv(500).refine((value) => value > 0 && value <= 500),
   LINE_MEDIA_BUCKET: z.string().min(1).default("line-media"),
+  MEDIA_DOWNLOAD_SIGNING_SECRET: optionalText,
   MEDIA_IMAGE_MAX_BYTES: integerEnv(8388608),
+  MEDIA_PDF_MAX_BYTES: integerEnv(4000000),
   MEDIA_VIDEO_MAX_BYTES: integerEnv(52428800),
   MEDIA_AUDIO_MAX_BYTES: integerEnv(20971520),
   MEDIA_STORAGE_WARNING_BYTES: integerEnv(734003200),
@@ -147,6 +149,13 @@ export const envSchema = z.object({
   SURVEY_MAX_QUICK_REPLY_OPTIONS: integerEnv(13),
   SURVEY_POSTBACK_TOKEN_SECRET: optionalText
 }).superRefine((env, context) => {
+  if (env.LINE_MEDIA_SEND_ENABLED && (!env.MEDIA_DOWNLOAD_SIGNING_SECRET || env.MEDIA_DOWNLOAD_SIGNING_SECRET.length < 32)) {
+    context.addIssue({
+      code: "custom",
+      path: ["MEDIA_DOWNLOAD_SIGNING_SECRET"],
+      message: "MEDIA_DOWNLOAD_SIGNING_SECRET must be at least 32 characters when media sending is enabled"
+    });
+  }
   if (!env.INBOUND_EMAIL_NOTIFICATIONS_ENABLED) return;
 
   if (env.INBOUND_EMAIL_NOTIFICATION_RECIPIENTS.length === 0) {

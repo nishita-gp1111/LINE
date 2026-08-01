@@ -6,4 +6,4 @@ file_size_limit = "50MiB"
 [storage.buckets.line-media]
 public = false
 file_size_limit = "50MiB"
-allowed_mime_types = ["image/jpeg", "image/png", "video/mp4", "audio/mpeg", "audio/mp4", "audio/x-m4a"]
+allowed_mime_types = ["image/jpeg", "image/png", "application/pdf", "video/mp4", "audio/mpeg", "audio/mp4", "audio/x-m4a"]

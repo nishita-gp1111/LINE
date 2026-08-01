@@ -29,7 +29,7 @@ export async function getLaunchReadiness(): Promise<{ state: ReadinessState; che
     flags.LINE_BULK_SEND_ENABLED &&
     !flags.LINE_SCHEDULED_SEND_ENABLED &&
     !flags.LINE_AUTO_REPLY_ENABLED &&
-    !flags.LINE_MEDIA_SEND_ENABLED
+    flags.LINE_MEDIA_SEND_ENABLED
   );
   checks.push({
     key: "flags",
@@ -57,7 +57,7 @@ export async function getLaunchReadiness(): Promise<{ state: ReadinessState; che
       allowlistDatabaseOk = false;
     }
 
-    const requiredTables = ["controlled_launch_recipients", "tags", "contact_tag_assignments", "surveys", "survey_responses", "automation_scenarios", "rich_menus", "rich_menu_rules", "rich_menu_assignments"];
+    const requiredTables = ["controlled_launch_recipients", "tags", "contact_tag_assignments", "surveys", "survey_responses", "automation_scenarios", "rich_menus", "rich_menu_rules", "rich_menu_assignments", "message_attachments"];
     const probes = await Promise.all(requiredTables.map((table) => admin.from(table).select("*", { count: "exact", head: true }).limit(1)));
     const failedTables = requiredTables.filter((_, index) => Boolean(probes[index]?.error));
     migrationOk = failedTables.length === 0;

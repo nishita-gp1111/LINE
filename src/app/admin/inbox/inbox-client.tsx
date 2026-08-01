@@ -33,8 +33,55 @@ type Props = {
   filter: InboxFilter;
   search: string;
   canSend: boolean;
+  canSendMedia: boolean;
   mockMode: boolean;
 };
+
+type MessageAttachmentSummary = {
+  id: string;
+  type: "image" | "pdf";
+  fileName: string;
+  sizeBytes: number | null;
+};
+
+function messageAttachment(message: PublicMessage): MessageAttachmentSummary | null {
+  const id = message.payloadJson.attachmentId;
+  const type = message.payloadJson.attachmentType;
+  const fileName = message.payloadJson.fileName;
+  const sizeBytes = message.payloadJson.sizeBytes;
+  if (typeof id !== "string" || (type !== "image" && type !== "pdf") || typeof fileName !== "string") return null;
+  return { id, type, fileName, sizeBytes: typeof sizeBytes === "number" ? sizeBytes : null };
+}
+
+function fileSize(value: number | null): string {
+  if (!value) return "";
+  return value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}MB` : `${Math.ceil(value / 1000)}KB`;
+}
+
+function MessageBody({ message }: { message: PublicMessage }) {
+  if (message.status === "deleted") return <p className="whitespace-pre-wrap text-sm leading-6">（メッセージが送信取消されました）</p>;
+  const attachment = messageAttachment(message);
+  if (attachment?.type === "image") {
+    const original = `/api/inbox/attachments/${encodeURIComponent(attachment.id)}/content`;
+    return (
+      <div className="grid gap-2">
+        <a href={original} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl bg-black/5">
+          <img src={`${original}?variant=preview`} alt={attachment.fileName} className="max-h-80 w-full object-contain" loading="lazy" decoding="async" />
+        </a>
+        <p className="truncate text-[11px] font-bold text-ink/55">🖼 {attachment.fileName}{attachment.sizeBytes ? ` ・ ${fileSize(attachment.sizeBytes)}` : ""}</p>
+      </div>
+    );
+  }
+  if (attachment?.type === "pdf") {
+    return (
+      <a href={`/api/inbox/attachments/${encodeURIComponent(attachment.id)}/content`} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-black/10 bg-white/80 p-3 hover:bg-white">
+        <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-rose-100 text-xl">📄</span>
+        <span className="min-w-0"><span className="block truncate text-sm font-black">{attachment.fileName}</span><span className="mt-0.5 block text-[10px] text-ink/45">PDFを開く{attachment.sizeBytes ? ` ・ ${fileSize(attachment.sizeBytes)}` : ""}</span></span>
+      </a>
+    );
+  }
+  return <p className="whitespace-pre-wrap text-sm leading-6">{message.textContent || `（${message.messageType}）`}</p>;
+}
 
 function date(value: string | null): string {
   return value
@@ -92,13 +139,16 @@ export default function InboxClient(props: Props) {
   const router = useRouter();
   const [text, setText] = useState("");
   const [note, setNote] = useState("");
+  const [selectedFileState, setSelectedFileState] = useState<{ conversationId: string; file: File } | null>(null);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const selected = props.selected;
   const canOperate = props.role !== "viewer";
   const blocked = selected?.contact.friendStatus === "blocked";
   const autoReadKeyRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const selectedConversationId = selected?.conversation.id || null;
+  const selectedFile = selectedFileState?.conversationId === selectedConversationId ? selectedFileState.file : null;
   const selectedLastMessageId = selected?.messages.at(-1)?.id || null;
   const selectedLastInboundMessageId = [...(selected?.messages || [])].reverse().find((message) => message.direction === "inbound")?.id || null;
 
@@ -150,6 +200,49 @@ export default function InboxClient(props: Props) {
       }
     } catch {
       setError("送信に失敗しました。");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  function chooseFile(file: File | null) {
+    setError("");
+    if (!file) {
+      setSelectedFileState(null);
+      return;
+    }
+    if (!["image/jpeg", "image/png", "application/pdf"].includes(file.type)) {
+      setError("送信できるのはJPG・PNG・PDFです。");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (file.size > 4_000_000) {
+      setError("ファイルは4MB以下にしてください。");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (!selectedConversationId) return;
+    setSelectedFileState({ conversationId: selectedConversationId, file });
+  }
+
+  async function sendAttachment() {
+    if (!selected || !selectedFile) return;
+    setWorking(true); setError("");
+    try {
+      const form = new FormData();
+      form.set("conversationId", selected.conversation.id);
+      form.set("clientRequestId", crypto.randomUUID());
+      form.set("file", selectedFile);
+      const response = await fetch("/api/inbox/messages/send-attachment", { method: "POST", body: form });
+      const result = await response.json() as { ok: boolean; error?: string };
+      if (!result.ok) setError(result.error || "ファイル送信に失敗しました。");
+      else {
+        setSelectedFileState(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        router.refresh();
+      }
+    } catch {
+      setError("ファイル送信に失敗しました。");
     } finally {
       setWorking(false);
     }
@@ -268,7 +361,7 @@ export default function InboxClient(props: Props) {
               <div className="mx-auto grid max-w-3xl gap-3">
                 {selected.messages.map((message) => (
                   <article key={message.id} className={`max-w-[86%] rounded-2xl px-4 py-3 shadow-sm ${message.direction === "outbound" ? "ml-auto rounded-br-md bg-[#cfeee0]" : "rounded-bl-md bg-white"}`}>
-                    <p className="whitespace-pre-wrap text-sm leading-6">{message.status === "deleted" ? "（メッセージが送信取消されました）" : message.textContent || `（${message.messageType}）`}</p>
+                    <MessageBody message={message} />
                     <div className="mt-2 flex items-center justify-end gap-2 text-[9px] text-ink/40">
                       {message.direction === "outbound" ? <span>{messageStatus(message)}</span> : null}
                       <span>{date(message.lineEventTimestamp)}</span>
@@ -284,6 +377,13 @@ export default function InboxClient(props: Props) {
               {error ? <p className="mb-3 rounded-lg bg-coral/10 p-3 text-sm font-bold text-coral" role="alert">{error}</p> : null}
               {blocked ? <p className="mb-3 rounded-lg bg-coral/10 p-3 text-sm font-bold text-coral">このユーザーはブロック中のため送信できません。</p> : null}
               <div className="rounded-xl border border-line bg-white focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-100">
+                {selectedFile ? (
+                  <div className="flex items-center gap-3 border-b border-line/70 bg-emerald-50/60 p-3">
+                    <span className={`grid size-12 shrink-0 place-items-center rounded-lg text-2xl ${selectedFile.type === "application/pdf" ? "bg-rose-100" : "bg-emerald-100"}`}>{selectedFile.type === "application/pdf" ? "📄" : "🖼️"}</span>
+                    <div className="min-w-0 flex-1"><p className="truncate text-xs font-black">{selectedFile.name}</p><p className="mt-0.5 text-[10px] text-ink/45">{fileSize(selectedFile.size)} ・ {selectedFile.type === "application/pdf" ? "LINEには閲覧ボタンで届きます" : "LINE内に画像で届きます"}</p></div>
+                    <button type="button" disabled={working} onClick={() => { setSelectedFileState(null); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="rounded-lg px-2 py-1 text-xs font-black text-ink/45 hover:bg-white">取消</button>
+                  </div>
+                ) : null}
                 <textarea
                   value={text}
                   onChange={(event) => setText(event.target.value)}
@@ -295,13 +395,15 @@ export default function InboxClient(props: Props) {
                   className="w-full resize-none rounded-t-xl border-0 p-3 text-sm outline-none disabled:bg-paper"
                 />
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line/70 px-3 py-2">
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(event) => chooseFile(event.target.files?.[0] || null)} />
+                    <button type="button" title={props.canSendMedia ? "画像またはPDFを選択" : "画像・PDF送信は現在OFFです"} disabled={!canOperate || !props.canSendMedia || blocked || working} onClick={() => fileInputRef.current?.click()} className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-35">📎 画像・PDF</button>
                     {props.quickReplies.slice(0, 4).map((item) => <button type="button" key={item.id} disabled={!canOperate || blocked || working} onClick={() => setText((current) => current ? `${current}\n${item.textContent}` : item.textContent)} className="rounded-full bg-paper px-2.5 py-1 text-[10px] font-bold hover:bg-emerald-50">＋ {item.name}</button>)}
                   </div>
-                  <div className="flex items-center gap-3"><span className="hidden text-[9px] text-ink/35 sm:inline">⌘ / Ctrl + Enterで送信</span><span className="text-[9px] text-ink/35">{text.length}/5000</span><button type="button" onClick={() => void send()} disabled={!canOperate || !props.canSend || blocked || working || !text.trim()} className="focus-ring rounded-lg bg-emerald-600 px-5 py-2 text-xs font-black text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-35">{working ? "処理中…" : "送信"}</button></div>
+                  <div className="flex items-center gap-3"><span className="hidden text-[9px] text-ink/35 sm:inline">⌘ / Ctrl + Enterで本文送信</span><span className="text-[9px] text-ink/35">{text.length}/5000</span><button type="button" onClick={() => void (selectedFile ? sendAttachment() : send())} disabled={!canOperate || !props.canSend || blocked || working || (selectedFile ? !props.canSendMedia : !text.trim())} className="focus-ring rounded-lg bg-emerald-600 px-5 py-2 text-xs font-black text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-35">{working ? "処理中…" : selectedFile ? "ファイルを送信" : "送信"}</button></div>
                 </div>
               </div>
-              <p className="mt-2 text-center text-[9px] text-ink/35">{props.mockMode ? "Mock Mode" : "Live Mode"} ・ LINE受付済みは到達や既読を意味しません</p>
+              <p className="mt-2 text-center text-[9px] text-ink/35">{props.mockMode ? "Mock Mode" : "Live Mode"} ・ JPG/PNG/PDF（4MBまで）・ LINE受付済みは到達や既読を意味しません</p>
             </div>
           </>
         ) : (

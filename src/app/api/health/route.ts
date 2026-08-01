@@ -56,6 +56,7 @@ export async function GET() {
         env.SUPABASE_SERVICE_ROLE_KEY
       ),
       surveyPostbackSecret: Boolean(env.SURVEY_POSTBACK_TOKEN_SECRET && env.SURVEY_POSTBACK_TOKEN_SECRET.length >= 32),
+      mediaDownloadSigningSecret: Boolean(env.MEDIA_DOWNLOAD_SIGNING_SECRET && env.MEDIA_DOWNLOAD_SIGNING_SECRET.length >= 32),
       controlledRecipientDatabase,
       controlledEnrollmentEnabled: env.LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED,
       controlledEnrollmentTokenHash: Boolean(env.LINE_CONTROLLED_LAUNCH_ENROLLMENT_TOKEN_HASH)

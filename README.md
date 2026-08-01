@@ -144,7 +144,13 @@ Sho本人の登録にBusiness IDやfollower一覧APIは使いません。`LINE_C
 
 管理者専用の`GET /api/line/recipient-candidates`は診断用の任意機能です。LINE follower ID APIが使えないアカウントでも、上記の署名済みWebhook登録だけでControlled Launchを開始できます。
 
-`LINE_BULK_SEND_ENABLED`は複数タグ配信のためProductionだけtrueにします。`LINE_SCHEDULED_SEND_ENABLED`、`LINE_AUTO_REPLY_ENABLED`、`LINE_MEDIA_SEND_ENABLED`はfalseのままにします。予約配信、汎用の時間差配信、高度な分析、バックアップ自動化はMinimum Production Launchの合否には含めません。アンケート未完了者へのメニュー表示だけは、Supabase Cronから`/api/cron/dispatch`を1分ごとに呼び出して実行します。
+`LINE_BULK_SEND_ENABLED`は複数タグ配信、`LINE_MEDIA_SEND_ENABLED`は1対1トークの画像・PDF送信のためProductionだけtrueにします。`LINE_SCHEDULED_SEND_ENABLED`と`LINE_AUTO_REPLY_ENABLED`はfalseのままにします。予約配信、汎用の時間差配信、高度な分析、バックアップ自動化はMinimum Production Launchの合否には含めません。アンケート未完了者へのメニュー表示だけは、Supabase Cronから`/api/cron/dispatch`を1分ごとに呼び出して実行します。
+
+### 1対1トークの画像・PDF送信
+
+`/admin/inbox`のクリップボタンからJPG、PNG、PDFを1件ずつ送信できます。上限はVercel Functionの受信制限に余裕を持たせた4MBです。画像はLINEの画像メッセージとして表示し、1MB以下のプレビューをサーバーで自動生成します。LINE Messaging APIはPDFメッセージ送信に対応していないため、PDFは「PDFを開く」ボタン付きFlex Messageとして送信します。
+
+ファイルはSupabaseのprivate `line-media` bucketへ保存します。顧客向けURLには`MEDIA_DOWNLOAD_SIGNING_SECRET`から作った推測困難な署名を付け、管理画面用URLはログインとorganizationを検証します。`MEDIA_DOWNLOAD_SIGNING_SECRET`は32文字以上の固定secretとし、既存リンクを維持するため運用中に変更しません。
 
 ### 本番切替順序
 
@@ -192,6 +198,9 @@ pnpm dev
 - `APP_TIMEZONE`: 既定値 `Asia/Tokyo`
 - `MOCK_LINE_API`: 既定値 `true`。Milestone 1以降のLINE mock切替用
 - `LINE_MANUAL_SEND_ENABLED`: 既定値 `false`。live modeの手動Push送信ゲート。mock modeではfalseでもMock送信可能
+- `LINE_MEDIA_SEND_ENABLED`: 既定値 `false`。1対1トークの画像・PDF送信ゲート
+- `MEDIA_DOWNLOAD_SIGNING_SECRET`: 画像・PDFの顧客向けURLを署名する32文字以上のサーバーsecret。ブラウザ・ログ・Gitへ出さない
+- `MEDIA_PDF_MAX_BYTES`: PDF保存上限。画面からの1回の送信は4MBまで
 - `MOCK_LINE_SEND_OUTCOME`: 既定値 `success`。Mock送信の結果fixture
 - `LINE_CONTROLLED_LAUNCH_ENROLLMENT_ENABLED`: 既定値 `false`。署名済みWebhookからの一回限り本人登録ゲート
 - `LINE_CONTROLLED_LAUNCH_ENROLLMENT_TOKEN_HASH`: 本人登録メッセージをSHA-256した64文字の小文字hex。平文は保存しない
