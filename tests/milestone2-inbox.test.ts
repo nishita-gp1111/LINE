@@ -58,8 +58,21 @@ describe("Milestone 2 conversation foundation", () => {
     const conversation = (await store.listConversations({ organizationId, profileId: "mock-user", filter: "all", page: 1, pageSize: 50 })).items[0]!.conversation;
     const note = await store.addNote(organizationId, conversation.id, "mock-user", "owner", "internal only");
     expect((await store.getConversation(organizationId, conversation.id, "mock-user"))?.notes[0]?.body).toBe("internal only");
+    expect((await store.listConversations({ organizationId, profileId: "mock-user", filter: "all", search: "internal only", page: 1, pageSize: 50 })).total).toBe(1);
+    expect((await store.listConversations({ organizationId, profileId: "mock-user", filter: "all", search: "not in this conversation", page: 1, pageSize: 50 })).total).toBe(0);
     expect(note.body).not.toBe("");
+    await store.deleteNote(organizationId, note.id, "mock-user", "owner");
+    expect((await store.listConversations({ organizationId, profileId: "mock-user", filter: "all", search: "internal only", page: 1, pageSize: 50 })).total).toBe(0);
     await expect(store.addNote(organizationId, conversation.id, "viewer", "viewer", "not allowed")).rejects.toThrow();
+  });
+
+  it("finds a conversation by message text", async () => {
+    const store = new MockWebhookStore();
+    const inbound = event("text");
+    await processWebhookEvent(inbound, store, { organizationId, profileClient });
+    const messageText = inbound.message?.type === "text" ? inbound.message.text : "";
+    expect(messageText).not.toBe("");
+    expect((await store.listConversations({ organizationId, profileId: "mock-user", filter: "all", search: messageText, page: 1, pageSize: 50 })).total).toBe(1);
   });
 });
 
