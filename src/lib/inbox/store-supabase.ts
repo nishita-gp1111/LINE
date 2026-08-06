@@ -87,18 +87,41 @@ export class SupabaseInboxStore implements InboxStore {
 
   async listConversations(query: ConversationListQuery): Promise<{ items: ConversationListItem[]; total: number; page: number; pageSize: number }> {
     const start = (query.page - 1) * query.pageSize;
-    let matchingContactIds: string[] | null = null;
-    if (query.search || query.ownerSearchLineUserId || query.filter === "blocked") {
+    const searchTerm = query.search?.trim();
+    let searchContactIds: string[] = [];
+    let searchConversationIds: string[] = [];
+    if (searchTerm) {
+      const contactSearchRequest = /^[0-9a-f-]{36}$/i.test(searchTerm)
+        ? this.client.from("contacts").select("id").eq("organization_id", query.organizationId).eq("id", searchTerm)
+        : this.client.from("contacts").select("id").eq("organization_id", query.organizationId).ilike("display_name", `%${searchTerm}%`);
+      const [contacts, messages, notes] = await Promise.all([
+        contactSearchRequest,
+        this.client.from("messages").select("conversation_id").eq("organization_id", query.organizationId).is("deleted_at", null).not("conversation_id", "is", null).ilike("text_content", `%${searchTerm}%`).limit(1000),
+        this.client.from("conversation_notes").select("conversation_id").eq("organization_id", query.organizationId).is("deleted_at", null).ilike("body", `%${searchTerm}%`).limit(1000)
+      ]);
+      if (contacts.error || messages.error || notes.error) throw new Error("会話を検索できませんでした。");
+      searchContactIds = ((contacts.data || []) as Row[]).map((row) => String(row.id));
+      searchConversationIds = [...new Set([
+        ...((messages.data || []) as Row[]).map((row) => String(row.conversation_id)),
+        ...((notes.data || []) as Row[]).map((row) => String(row.conversation_id))
+      ])];
+      if (!searchContactIds.length && !searchConversationIds.length) return { items: [], total: 0, page: query.page, pageSize: query.pageSize };
+    }
+    let restrictedContactIds: string[] | null = null;
+    if (query.ownerSearchLineUserId || query.filter === "blocked") {
       let contactRequest = this.client.from("contacts").select("id").eq("organization_id", query.organizationId);
-      if (query.search) contactRequest = /^[0-9a-f-]{36}$/i.test(query.search) ? contactRequest.eq("id", query.search) : contactRequest.ilike("display_name", `%${query.search}%`);
       if (query.ownerSearchLineUserId) contactRequest = contactRequest.eq("line_user_id", query.ownerSearchLineUserId);
       if (query.filter === "blocked") contactRequest = contactRequest.eq("friend_status", "blocked");
       const contacts = await contactRequest;
-      matchingContactIds = ((contacts.data || []) as Row[]).map((row) => String(row.id));
-      if (!matchingContactIds.length) return { items: [], total: 0, page: query.page, pageSize: query.pageSize };
+      if (contacts.error) throw new Error("会話一覧を取得できませんでした。");
+      restrictedContactIds = ((contacts.data || []) as Row[]).map((row) => String(row.id));
+      if (!restrictedContactIds.length) return { items: [], total: 0, page: query.page, pageSize: query.pageSize };
     }
     let request = this.client.from("conversations").select("*", { count: "exact" }).eq("organization_id", query.organizationId).order("last_message_at", { ascending: false, nullsFirst: false }).range(start, start + query.pageSize - 1);
-    if (matchingContactIds) request = request.in("contact_id", matchingContactIds);
+    if (restrictedContactIds) request = request.in("contact_id", restrictedContactIds);
+    if (searchContactIds.length && searchConversationIds.length) request = request.or(`contact_id.in.(${searchContactIds.join(",")}),id.in.(${searchConversationIds.join(",")})`);
+    else if (searchContactIds.length) request = request.in("contact_id", searchContactIds);
+    else if (searchConversationIds.length) request = request.in("id", searchConversationIds);
     if (["open", "pending", "closed"].includes(query.filter)) request = request.eq("status", query.filter);
     if (query.filter === "mine") request = request.eq("assignee_profile_id", query.profileId);
     if (query.filter === "unassigned") request = request.is("assignee_profile_id", null);

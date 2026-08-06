@@ -273,7 +273,7 @@ export default function InboxClient(props: Props) {
           <form className="grid gap-2" method="get">
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-3 grid place-items-center text-sm text-ink/35">⌕</span>
-              <input name="q" defaultValue={props.search} placeholder="名前・メッセージを検索" className="focus-ring min-h-11 w-full rounded-xl border border-line bg-[#f8faf9] pl-9 pr-3 text-sm" />
+              <input name="q" defaultValue={props.search} placeholder="名前・メッセージ・メモを検索" className="focus-ring min-h-11 w-full rounded-xl border border-line bg-[#f8faf9] pl-9 pr-3 text-sm" />
             </div>
             <div className="grid grid-cols-[1fr_auto] gap-2">
               <select name="filter" defaultValue={props.filter} className="focus-ring min-h-10 rounded-lg border border-line bg-white px-3 text-xs font-bold">

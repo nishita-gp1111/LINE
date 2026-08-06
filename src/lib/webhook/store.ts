@@ -471,6 +471,21 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
 
   async listConversations(query: ConversationListQuery): Promise<{ items: ConversationListItem[]; total: number; page: number; pageSize: number }> {
     const search = query.search?.trim().toLowerCase();
+    const searchTextByConversation = new Map<string, string[]>();
+    if (search) {
+      for (const message of this.messages.values()) {
+        if (message.organizationId !== query.organizationId || !message.conversationId || message.deletedAt || !message.textContent) continue;
+        const values = searchTextByConversation.get(message.conversationId) || [];
+        values.push(message.textContent);
+        searchTextByConversation.set(message.conversationId, values);
+      }
+      for (const note of this.notes.values()) {
+        if (note.organizationId !== query.organizationId || note.deletedAt) continue;
+        const values = searchTextByConversation.get(note.conversationId) || [];
+        values.push(note.body);
+        searchTextByConversation.set(note.conversationId, values);
+      }
+    }
     const items = [...this.conversations.values()]
       .filter((conversation) => conversation.organizationId === query.organizationId)
       .map((conversation) => {
@@ -486,7 +501,12 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
         if (["open", "pending", "closed"].includes(query.filter) && item.conversation.status !== query.filter) return false;
         if (query.filter === "blocked" && item.contact.friendStatus !== "blocked") return false;
         if (query.filter === "high" && item.conversation.priority !== "high") return false;
-        if (search && !`${item.contact.displayName || ""} ${item.contact.id}`.toLowerCase().includes(search)) return false;
+        if (search && ![
+          item.contact.displayName || "",
+          item.contact.id,
+          item.conversation.lastMessagePreview || "",
+          ...(searchTextByConversation.get(item.conversation.id) || [])
+        ].join(" ").toLowerCase().includes(search)) return false;
         if (query.ownerSearchLineUserId && item.contact.lineUserId !== query.ownerSearchLineUserId) return false;
         return true;
       })
