@@ -62,7 +62,7 @@ async function lineRequest(path: string, init: RequestInit = {}, dataApi = false
   }
 }
 
-async function defaultRichMenuRequest(path: string, init: RequestInit = {}): Promise<{ status: number; body: Row }> {
+async function defaultRichMenuRequest(path: string, init: RequestInit = {}, allowNotFound = false): Promise<{ status: number; body: Row }> {
   assertDefaultRichMenuPath(path);
   const token = getServerEnv().LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) throw new Error("LINE_CHANNEL_ACCESS_TOKENが設定されていません。");
@@ -76,7 +76,7 @@ async function defaultRichMenuRequest(path: string, init: RequestInit = {}): Pro
     if (response.headers.get("content-type")?.includes("json")) {
       try { body = row(await response.json()); } catch { body = {}; }
     }
-    if (!response.ok) throw new Error(`LINE default rich menu request failed (${response.status})`);
+    if (!response.ok && !(allowNotFound && response.status === 404)) throw new Error(`LINE default rich menu request failed (${response.status})`);
     return { status: response.status, body };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw new Error("LINE default rich menu request timed out");
@@ -1039,6 +1039,31 @@ export async function setLiveDefaultRichMenu(input: {
     throw new Error("基本リッチメニューの設定状態を保存できませんでした。");
   }
   return { lineRichMenuId, unchanged: menu.is_default === true };
+}
+
+export async function unsetLiveDefaultRichMenu(input: {
+  client: SupabaseClient;
+  organizationId: string;
+}): Promise<{ removed: boolean }> {
+  assertLaunchAction("LINE_RICH_MENU_MUTATION_ENABLED");
+  const current = await defaultRichMenuRequest("/v2/bot/user/all/richmenu", {}, true);
+  const previousLineId = typeof current.body.richMenuId === "string" && current.body.richMenuId
+    ? current.body.richMenuId
+    : null;
+
+  await defaultRichMenuRequest("/v2/bot/user/all/richmenu", { method: "DELETE" }, true);
+  const cleared = await input.client
+    .from("rich_menus")
+    .update({ is_default: false, updated_at: new Date().toISOString() })
+    .eq("organization_id", input.organizationId)
+    .eq("is_default", true);
+  if (cleared.error) {
+    if (previousLineId) {
+      await defaultRichMenuRequest(`/v2/bot/user/all/richmenu/${encodeURIComponent(previousLineId)}`, { method: "POST" }).catch(() => undefined);
+    }
+    throw new Error("基本リッチメニューの解除状態を保存できませんでした。");
+  }
+  return { removed: current.status !== 404 };
 }
 
 async function intendedRichMenuContactIds(client: SupabaseClient, organizationId: string, richMenuId: string): Promise<string[]> {

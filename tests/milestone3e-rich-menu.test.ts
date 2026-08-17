@@ -23,6 +23,8 @@ describe("Milestone 3E rich menu", () => {
     expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "admin", isDefaultChange: true, confirmation: "" })).toThrow();
     expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "admin", isDefaultChange: true, confirmation: "SET_DEFAULT_RICH_MENU" })).not.toThrow();
     expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "owner", isDefaultChange: true, confirmation: "SET_DEFAULT_RICH_MENU" })).not.toThrow();
+    expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "admin", isDefaultChange: true, confirmation: "SET_DEFAULT_RICH_MENU", defaultAction: "unset" })).toThrow();
+    expect(() => assertRichMenuMutation({ mock: false, enabled: true, role: "admin", isDefaultChange: true, confirmation: "UNSET_DEFAULT_RICH_MENU", defaultAction: "unset" })).not.toThrow();
   });
   it("rejects the LINE default rich-menu endpoint", () => {
     expect(() => assertPerUserRichMenuPath("/v2/bot/user/all/richmenu/Rmenu")).toThrow();
