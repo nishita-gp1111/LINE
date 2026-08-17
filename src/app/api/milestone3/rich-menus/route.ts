@@ -3,9 +3,9 @@ import { getAuthenticatedUser } from "@/lib/auth/server";
 import { canAdminister, getInboxAuthContext } from "@/lib/inbox/auth";
 import { getServerEnv } from "@/lib/env/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { createLiveRichMenu, repairLiveRichMenuDisplay, setLiveDefaultRichMenu, unsetLiveDefaultRichMenu } from "@/lib/minimum-launch/live";
+import { createLiveRichMenu, repairLiveRichMenuDisplay, setLiveDefaultRichMenu, unlinkLiveRichMenuFromAllAssignedUsers, unsetLiveDefaultRichMenu } from "@/lib/minimum-launch/live";
 import { getRichMenuLayout, type RichMenuActionInput } from "@/lib/minimum-launch/rich-menu-layouts";
-import { assertRichMenuMutation } from "@/lib/milestone3/rich-menu";
+import { assertBulkRichMenuUnlink, assertRichMenuMutation } from "@/lib/milestone3/rich-menu";
 
 export const runtime = "nodejs";
 
@@ -83,6 +83,12 @@ export async function PATCH(request: Request) {
       return reply({ defaultMenu });
     }
     if (typeof body.menuId !== "string" || !body.menuId) return reply({ error: "リッチメニューを選択してください。" }, 400);
+    if (body.action === "unlink_all_assignments") {
+      const env = getServerEnv();
+      assertBulkRichMenuUnlink({ mock: env.MOCK_LINE_API, enabled: env.LINE_RICH_MENU_MUTATION_ENABLED, role: auth.role, confirmation: String(body.confirmation || "") });
+      const unlink = await unlinkLiveRichMenuFromAllAssignedUsers({ client, organizationId: auth.organizationId, richMenuId: body.menuId });
+      return reply({ unlink });
+    }
     if (body.action === "set_default") {
       const env = getServerEnv();
       assertRichMenuMutation({ mock: env.MOCK_LINE_API, enabled: env.LINE_RICH_MENU_MUTATION_ENABLED, role: auth.role, isDefaultChange: true, confirmation: String(body.confirmation || "") });
