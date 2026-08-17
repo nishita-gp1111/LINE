@@ -220,6 +220,30 @@ export default function RichMenusPage() {
     }
   }
 
+  async function unsetDefault() {
+    if (!window.confirm("現在の全員向けリッチメニュー表示を外します。メニュー本体は削除されません。よろしいですか？")) return;
+    setWorking(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/milestone3/rich-menus", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unset_default", confirmation: "UNSET_DEFAULT_RICH_MENU" })
+      });
+      const data = await response.json() as { error?: string; defaultMenu?: { removed?: boolean } };
+      if (!response.ok || data.error) {
+        setMessage(data.error || "全員向けリッチメニューの表示を外せませんでした。");
+        return;
+      }
+      setMessage(data.defaultMenu?.removed ? "全員向けリッチメニューの表示を外しました。" : "全員向けリッチメニューはすでに外れています。");
+      await load();
+    } catch {
+      setMessage("通信に失敗しました。時間をおいてもう一度お試しください。");
+    } finally {
+      setWorking(false);
+    }
+  }
+
   const canCreate = !working && Boolean(form.name.trim() && form.tagId && form.chatBarText.trim() && image && allActionsValid);
 
   return <main className="min-h-screen px-4 py-6 sm:px-8 sm:py-8 lg:px-10">
@@ -327,6 +351,10 @@ export default function RichMenusPage() {
 
       <section className="mt-6 rounded-2xl border border-line bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-black">作成済みメニュー</h2><p className="mt-1 text-xs text-ink/50">タグ条件ごとの適用状況を確認できます。</p></div><span className="rounded-full bg-paper px-3 py-1 text-xs font-bold text-ink/55">{menus.length}件</span></div>
+        <div className="mt-4 flex flex-col justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-sm sm:flex-row sm:items-center">
+          <span><b>全員向けの表示を一時停止</b><span className="mt-1 block text-xs text-ink/60">現在LINEで表示中の基本メニューだけを外します。作成済みメニューや画像は削除しません。</span></span>
+          <button type="button" onClick={() => void unsetDefault()} disabled={working} className="focus-ring shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-black text-amber-900 disabled:opacity-40">今の基本メニューを外す</button>
+        </div>
         {menus.length ? <div className="mt-4 grid gap-2">{menus.map((menu) => <div key={menu.id} className="flex flex-col justify-between gap-3 rounded-xl border border-line p-4 text-sm sm:flex-row sm:items-center"><span><b>{menu.name}</b><span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-800">{menu.status}</span>{menu.isDefault ? <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-black text-violet-800">全員の基本メニュー</span> : null}<span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-bold ${menu.opensByDefault ? "bg-sky-50 text-sky-800" : "bg-amber-50 text-amber-800"}`}>{menu.opensByDefault ? "自動表示ON" : "自動表示の修復が必要"}</span><span className="mt-1 block text-xs text-ink/55">{menu.isDefault ? "友だち全員に表示" : menu.tagName ? `${menu.tagName} → ${menu.linkCount ?? menu.links?.length ?? 0}名に適用中` : `個別設定 ${menu.linkCount ?? menu.links?.length ?? 0}名`}</span></span><span className="flex shrink-0 flex-wrap gap-2"><button type="button" onClick={() => void repair(menu)} disabled={working} className="focus-ring rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-900 disabled:opacity-40">{menu.opensByDefault ? "対象者へ再反映" : "自動表示を修復"}</button><button type="button" onClick={() => void setDefault(menu)} disabled={working || menu.isDefault} className="focus-ring rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-900 disabled:opacity-50">{menu.isDefault ? "全員に表示中" : "全員の基本メニューにする"}</button></span></div>)}</div> : <div className="mt-4 rounded-xl border border-dashed border-line bg-paper/35 py-8 text-center text-sm text-ink/45">作成済みのリッチメニューはまだありません。</div>}
       </section>
     </div>

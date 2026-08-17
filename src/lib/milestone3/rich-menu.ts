@@ -22,11 +22,14 @@ export function validateRichMenuDefinition(input: unknown) {
   return definition;
 }
 
-export function assertRichMenuMutation(input: { mock: boolean; enabled: boolean; role: string; isDefaultChange: boolean; confirmation: string }): void {
+export function assertRichMenuMutation(input: { mock: boolean; enabled: boolean; role: string; isDefaultChange: boolean; confirmation: string; defaultAction?: "set" | "unset" }): void {
   if (input.isDefaultChange) {
     if (!input.mock && !input.enabled) throw new Error("LINE_RICH_MENU_MUTATION_ENABLED is disabled");
     if (!["owner", "admin"].includes(input.role)) throw new Error("デフォルトリッチメニューの変更権限がありません。");
-    if (input.confirmation !== "SET_DEFAULT_RICH_MENU") throw new Error("全員へ表示する確認が必要です。");
+    const expectedConfirmation = input.defaultAction === "unset" ? "UNSET_DEFAULT_RICH_MENU" : "SET_DEFAULT_RICH_MENU";
+    if (input.confirmation !== expectedConfirmation) {
+      throw new Error(input.defaultAction === "unset" ? "全員向け表示を解除する確認が必要です。" : "全員へ表示する確認が必要です。");
+    }
     return;
   }
   if (input.mock) return;
