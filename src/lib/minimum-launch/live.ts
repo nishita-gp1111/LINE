@@ -1066,6 +1066,65 @@ export async function unsetLiveDefaultRichMenu(input: {
   return { removed: current.status !== 404 };
 }
 
+export async function unlinkLiveRichMenuFromAllAssignedUsers(input: {
+  client: SupabaseClient;
+  organizationId: string;
+  richMenuId: string;
+}): Promise<{ unlinkedAssignments: number }> {
+  assertLaunchAction("LINE_RICH_MENU_MUTATION_ENABLED");
+  const selected = await input.client
+    .from("rich_menus")
+    .select("id, line_rich_menu_id, status")
+    .eq("organization_id", input.organizationId)
+    .eq("id", input.richMenuId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (selected.error || !selected.data || !row(selected.data).line_rich_menu_id) {
+    throw new Error("表示を外すリッチメニューが見つかりません。");
+  }
+
+  const lineRichMenuId = String(row(selected.data).line_rich_menu_id);
+  const operation = { operations: [{ type: "unlink", from: lineRichMenuId }], resumeRequestKey: `unlink-${randomUUID()}` };
+  await lineRequest("/v2/bot/richmenu/validate/batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(operation)
+  });
+  const accepted = await lineRequest("/v2/bot/richmenu/batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(operation)
+  });
+  const requestId = accepted.headers.get("x-line-request-id");
+  if (!requestId) throw new Error("LINEの一括解除受付IDを取得できませんでした。");
+
+  let phase = "ongoing";
+  for (let attempt = 0; attempt < 20 && phase === "ongoing"; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 500));
+    const progress = await lineRequest(`/v2/bot/richmenu/progress/batch?requestId=${encodeURIComponent(requestId)}`);
+    phase = typeof progress.body.phase === "string" ? progress.body.phase : "ongoing";
+  }
+  if (phase !== "succeeded") {
+    throw new Error(phase === "failed" ? "LINEのリッチメニュー一括解除に失敗しました。" : "LINEのリッチメニュー一括解除が時間内に完了しませんでした。");
+  }
+
+  const { count, error: countError } = await input.client
+    .from("rich_menu_assignments")
+    .select("contact_id", { count: "exact", head: true })
+    .eq("organization_id", input.organizationId)
+    .eq("rich_menu_id", input.richMenuId)
+    .neq("status", "removed");
+  if (countError) throw new Error("解除対象数を取得できませんでした。");
+  const updated = await input.client
+    .from("rich_menu_assignments")
+    .update({ status: "removed", line_synced_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("organization_id", input.organizationId)
+    .eq("rich_menu_id", input.richMenuId)
+    .neq("status", "removed");
+  if (updated.error) throw new Error("リッチメニューの解除状態を保存できませんでした。");
+  return { unlinkedAssignments: count || 0 };
+}
+
 async function intendedRichMenuContactIds(client: SupabaseClient, organizationId: string, richMenuId: string): Promise<string[]> {
   const ids = new Set<string>();
   const [assignments, rules, surveys] = await Promise.all([

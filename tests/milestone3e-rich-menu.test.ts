@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertDefaultRichMenuPath, assertPerUserRichMenuPath, assertRichMenuMutation, validateRichMenuDefinition } from "@/lib/milestone3/rich-menu";
+import { assertBulkRichMenuUnlink, assertDefaultRichMenuPath, assertPerUserRichMenuPath, assertRichMenuMutation, validateRichMenuDefinition } from "@/lib/milestone3/rich-menu";
 import { RICH_MENU_LAYOUTS, RICH_MENU_OPENS_BY_DEFAULT, scaleRichMenuLayout } from "@/lib/minimum-launch/rich-menu-layouts";
 import { buildFriendlyRichMenuSvg, GP_FRIENDLY_RICH_MENU_PRESET } from "@/lib/minimum-launch/rich-menu-preset";
 
@@ -29,6 +29,11 @@ describe("Milestone 3E rich menu", () => {
   it("rejects the LINE default rich-menu endpoint", () => {
     expect(() => assertPerUserRichMenuPath("/v2/bot/user/all/richmenu/Rmenu")).toThrow();
     expect(() => assertPerUserRichMenuPath("/v2/bot/user/U123/richmenu/Rmenu")).not.toThrow();
+  });
+  it("requires explicit confirmation before unlinking a menu from all assigned users", () => {
+    expect(() => assertBulkRichMenuUnlink({ mock: false, enabled: true, role: "admin", confirmation: "" })).toThrow();
+    expect(() => assertBulkRichMenuUnlink({ mock: false, enabled: true, role: "viewer", confirmation: "UNLINK_RICH_MENU_FROM_ALL_ASSIGNED_USERS" })).toThrow();
+    expect(() => assertBulkRichMenuUnlink({ mock: false, enabled: true, role: "owner", confirmation: "UNLINK_RICH_MENU_FROM_ALL_ASSIGNED_USERS" })).not.toThrow();
   });
   it("allows only the exact LINE default rich-menu endpoints through the global path", () => {
     expect(() => assertDefaultRichMenuPath("/v2/bot/user/all/richmenu/Rmenu")).not.toThrow();

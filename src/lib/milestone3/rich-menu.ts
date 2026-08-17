@@ -37,6 +37,13 @@ export function assertRichMenuMutation(input: { mock: boolean; enabled: boolean;
   if (!["owner", "admin"].includes(input.role)) throw new Error("リッチメニュー操作権限がありません。");
 }
 
+export function assertBulkRichMenuUnlink(input: { mock: boolean; enabled: boolean; role: string; confirmation: string }): void {
+  assertRichMenuMutation({ ...input, isDefaultChange: false });
+  if (input.confirmation !== "UNLINK_RICH_MENU_FROM_ALL_ASSIGNED_USERS") {
+    throw new Error("対象者全員から表示を外す確認が必要です。");
+  }
+}
+
 export function assertPerUserRichMenuPath(path: string): void {
   if (/^\/v2\/bot\/user\/all\/richmenu(?:\/|$)/.test(path)) {
     throw new Error("デフォルトリッチメニュー変更APIは使用できません。");
