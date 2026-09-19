@@ -271,6 +271,13 @@ pnpm test:e2e
 
 E2Eはmock modeの開発サーバーで、未認証の `/admin` リダイレクトとmockログインを確認します。WebhookとInboxの単体・統合テストは `pnpm test` に含まれます。RPCはservice roleだけが実行でき、管理画面の読み取りは組織RLSの範囲に限定されます。macOSのChromium sandbox権限でE2Eが起動できない場合は、OSのセキュリティ設定を弱めず、HTTP確認と単体・統合テストを代替確認として区別してください。
 
+## URL別の担当者自動振り分け
+
+共通ログインでも、流入経路URLごとに担当者名を登録し、順番に自動割り当てできます。
+設定場所は `/admin/acquisition`、手動変更はトークの「担当者」欄です。
+既存担当者は維持し、同じお客様の再アクセスでは再割り当てしません。
+DB更新・設定手順と検証範囲は [担当者振り分けガイド](docs/acquisition-assignment.md) を参照してください。
+
 ## コスト方針
 
 新着LINE通知だけResendを利用します。Vercelの従量課金アドオン、AI API、SMS、外部キューは追加しません。本番利用時はVercel、Supabase、Resendの利用枠と料金を公式情報で確認します。

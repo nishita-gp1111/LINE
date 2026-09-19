@@ -18,6 +18,7 @@ export type ConversationRecord = {
   contactId: string;
   status: ConversationStatus;
   assigneeProfileId: string | null;
+  assigneeName?: string | null;
   priority: ConversationPriority;
   lastMessageAt: string | null;
   lastInboundAt: string | null;
@@ -92,6 +93,7 @@ export type ConversationListQuery = {
 export type ConversationUpdate = {
   status?: ConversationStatus;
   assigneeProfileId?: string | null;
+  assigneeName?: string | null;
   priority?: ConversationPriority;
 };
 

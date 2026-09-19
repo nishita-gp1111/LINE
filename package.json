@@ -25,6 +25,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@next/swc-wasm-nodejs": "^16.2.10",
     "@playwright/test": "^1.61.1",
     "@types/node": "^24.13.3",

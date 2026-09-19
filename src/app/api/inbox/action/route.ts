@@ -4,6 +4,7 @@ import { inboxActionSchema } from "@/lib/inbox/schemas";
 import { getInboxStore } from "@/lib/inbox/store";
 import { getServerEnv } from "@/lib/env/server";
 import { markLineChatAsRead } from "@/lib/line/read";
+import { getAssignmentSettings } from "@/lib/acquisition/assignment-store";
 
 export const runtime = "nodejs";
 
@@ -29,10 +30,17 @@ export async function POST(request: Request) {
     if (parsed.data.action === "update") {
       if (auth.role === "viewer") return NextResponse.json({ ok: false, error: "権限がありません。" }, { status: 403 });
       const assigneeProfileId = parsed.data.assigneeProfileId;
+      const assigneeName = parsed.data.assigneeName;
+      if (assigneeName && assigneeProfileId) return NextResponse.json({ ok: false, error: "担当者は1名だけ指定してください。" }, { status: 400 });
+      if (assigneeName) {
+        const settings = await getAssignmentSettings(auth.organizationId);
+        if (!settings.available) return NextResponse.json({ ok: false, error: "担当者設定を読み込めませんでした。" }, { status: 503 });
+        if (!settings.rules.some(rule => rule.staffNames.includes(assigneeName))) return NextResponse.json({ ok: false, error: "登録済みの担当者名を指定してください。" }, { status: 400 });
+      }
       if (assigneeProfileId && auth.role !== "admin" && auth.role !== "owner" && assigneeProfileId !== auth.profileId) return NextResponse.json({ ok: false, error: "担当者を変更できません。" }, { status: 403 });
       if (assigneeProfileId && !(await store.listProfiles(auth.organizationId)).some((profile) => profile.id === assigneeProfileId)) return NextResponse.json({ ok: false, error: "同じorganizationの担当者を指定してください。" }, { status: 400 });
-      const conversation = await store.updateConversation(auth.organizationId, parsed.data.conversationId, auth.profileId, auth.role, { status: parsed.data.status, assigneeProfileId: parsed.data.assigneeProfileId, priority: parsed.data.priority });
-      await store.recordAudit({ organizationId: auth.organizationId, actorProfileId: auth.profileId, action: parsed.data.assigneeProfileId !== undefined ? "conversation.assigned" : parsed.data.priority ? "conversation.priority_changed" : "conversation.status_changed", resourceType: "conversation", resourceId: parsed.data.conversationId, metadata: { status: parsed.data.status || null, priority: parsed.data.priority || null } });
+      const conversation = await store.updateConversation(auth.organizationId, parsed.data.conversationId, auth.profileId, auth.role, { status: parsed.data.status, assigneeProfileId: parsed.data.assigneeProfileId, assigneeName, priority: parsed.data.priority });
+      await store.recordAudit({ organizationId: auth.organizationId, actorProfileId: auth.profileId, action: parsed.data.assigneeProfileId !== undefined || assigneeName !== undefined ? "conversation.assigned" : parsed.data.priority ? "conversation.priority_changed" : "conversation.status_changed", resourceType: "conversation", resourceId: parsed.data.conversationId, metadata: { status: parsed.data.status || null, priority: parsed.data.priority || null } });
       return NextResponse.json({ ok: true, conversation });
     }
     if (parsed.data.action === "note_create") {

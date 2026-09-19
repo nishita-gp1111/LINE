@@ -497,7 +497,7 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
       .filter((item) => {
         if (query.filter === "unread" && item.readState.unreadCount === 0) return false;
         if (query.filter === "mine" && item.conversation.assigneeProfileId !== query.profileId) return false;
-        if (query.filter === "unassigned" && item.conversation.assigneeProfileId) return false;
+        if (query.filter === "unassigned" && (item.conversation.assigneeProfileId || item.conversation.assigneeName)) return false;
         if (["open", "pending", "closed"].includes(query.filter) && item.conversation.status !== query.filter) return false;
         if (query.filter === "blocked" && item.contact.friendStatus !== "blocked") return false;
         if (query.filter === "high" && item.conversation.priority !== "high") return false;
@@ -552,7 +552,8 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
       conversation.closedAt = update.status === "closed" ? new Date().toISOString() : null;
     }
     if (update.priority) conversation.priority = update.priority;
-    if (update.assigneeProfileId !== undefined) conversation.assigneeProfileId = update.assigneeProfileId;
+    if (update.assigneeProfileId !== undefined) { conversation.assigneeProfileId = update.assigneeProfileId; conversation.assigneeName = null; }
+    if (update.assigneeName !== undefined) { conversation.assigneeName = update.assigneeName; if (update.assigneeName) conversation.assigneeProfileId = null; }
     conversation.updatedAt = new Date().toISOString();
     return conversation;
   }

@@ -263,6 +263,7 @@ export class SupabaseWebhookStore implements WebhookStore {
       contactId: String(row.contact_id),
       status: row.status as ConversationRecord["status"],
       assigneeProfileId: (row.assignee_profile_id as string | null) || null,
+      assigneeName: (row.assignee_name as string | null) || null,
       priority: row.priority as ConversationRecord["priority"],
       lastMessageAt: (row.last_message_at as string | null) || null,
       lastInboundAt: (row.last_inbound_at as string | null) || null,
