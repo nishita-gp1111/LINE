@@ -13,7 +13,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "NEXT_PUBLIC_AUTH_MODE=mock NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000 MOCK_LINE_API=true APP_ENV=test LINE_CHANNEL_SECRET=e2e-secret ./node_modules/.bin/next start -H 127.0.0.1",
+    command: "NEXT_PUBLIC_AUTH_MODE=mock NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000 MOCK_LINE_API=true APP_ENV=test LINE_CHANNEL_SECRET=e2e-secret LINE_EXPECTED_BASIC_ID=@example ./node_modules/.bin/next start -H 127.0.0.1",
     url: "http://127.0.0.1:3000",
     reuseExistingServer: false,
     timeout: 120_000

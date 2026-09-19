@@ -20,6 +20,7 @@ describe("named assignment settings", () => {
     expect(assignmentRuleSchema.safeParse({ ...input, staffNames: [] }).success).toBe(false);
     expect(assignmentRuleSchema.safeParse({ ...input, staffNames: [], enabled: false }).success).toBe(true);
     expect(assignmentRuleSchema.safeParse({ ...input, routeSlug: "unknown" }).success).toBe(false);
+    expect(assignmentRuleSchema.safeParse({ ...input, routeSlug: "meeting-imafuku" }).success).toBe(false);
   });
   it("keeps names distinct from login IDs and clears the other assignment", () => {
     expect(assigneeUpdate("name:担当A")).toEqual({ assigneeName: "担当A", assigneeProfileId: null });
@@ -41,6 +42,18 @@ describe("named assignment settings", () => {
     auth.value = { organizationId: "org", profileId: "viewer", role: "viewer" }; expect((await POST(request())).status).toBe(403);
     auth.value.role = "owner"; auth.trusted = false; expect((await POST(request())).status).toBe(403);
     expect(save).toHaveBeenCalledTimes(1);
+  });
+  it("fails closed on dedicated links until the database supports fixed assignment", async () => {
+    const rpc = vi.fn();
+    const client = { rpc } as unknown as SupabaseClient;
+    for (const status of ["assigned", "duplicate", "preserved"]) {
+      rpc.mockResolvedValue({ data: { status }, error: null });
+      await expect(assignAcquisitionContact(client, "org", "contact", "meeting-imafuku")).resolves.toBeUndefined();
+    }
+    for (const data of [null, { status: "disabled" }]) {
+      rpc.mockResolvedValue({ data, error: null });
+      await expect(assignAcquisitionContact(client, "org", "contact", "meeting-imafuku")).rejects.toThrow("準備できていません");
+    }
   });
   it("rejects invalid input and reports save errors without exposing database details", async () => {
     expect((await POST(request({ ...input, staffNames: [] }))).status).toBe(400);

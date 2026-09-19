@@ -5,6 +5,7 @@ import type { InboxFilter } from "@/lib/inbox/types";
 import InboxClient from "@/app/admin/inbox/inbox-client";
 import { toPublicMessage } from "@/lib/inbox/public";
 import { getAssignmentSettings } from "@/lib/acquisition/assignment-store";
+import { FIXED_ASSIGNEE_NAMES } from "@/lib/acquisition/routes";
 
 const filters: Array<{ value: InboxFilter; label: string }> = [
   { value: "all", label: "すべて" },
@@ -63,7 +64,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           </div>
           <div className="flex gap-2"><Link href="/admin/contacts" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">顧客一覧</Link><Link href="/admin/settings/quick-replies" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">クイック返信設定</Link></div>
         </div>
-        <InboxClient items={result.items} total={result.total} page={result.page} pageSize={result.pageSize} filters={filters} selected={safeDetail} quickReplies={quickReplies} profiles={profiles} staffNames={[...new Set(assignmentSettings.rules.flatMap(rule => rule.staffNames))]} authProfileId={data.auth.profileId} role={data.auth.role} filter={filter} search={search} canSend={canSend} canSendMedia={canSendMedia} mockMode={env.MOCK_LINE_API} />
+        <InboxClient items={result.items} total={result.total} page={result.page} pageSize={result.pageSize} filters={filters} selected={safeDetail} quickReplies={quickReplies} profiles={profiles} staffNames={[...new Set([...FIXED_ASSIGNEE_NAMES, ...assignmentSettings.rules.flatMap(rule => rule.staffNames)])]} authProfileId={data.auth.profileId} role={data.auth.role} filter={filter} search={search} canSend={canSend} canSendMedia={canSendMedia} mockMode={env.MOCK_LINE_API} />
       </div>
     </main>
   );

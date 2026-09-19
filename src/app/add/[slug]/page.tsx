@@ -64,6 +64,7 @@ export default async function AcquisitionLandingPage({ params }: { params: Promi
           </div>
           <p className="mt-4 text-xs font-bold tracking-[0.18em] text-white/80">GP PRモニター窓口</p>
           <h1 className="mt-2 text-2xl font-black tracking-tight">LINEで続きを受け取る</h1>
+          {route.fixedAssigneeName ? <p className="mt-3 inline-flex rounded-full bg-white/20 px-4 py-1.5 text-sm font-bold">{route.fixedAssigneeName}からのご案内</p> : null}
           <p className="mt-3 text-sm font-medium leading-6 text-white/90">下のボタンから、友だち追加とご案内登録を進めます。</p>
         </div>
 

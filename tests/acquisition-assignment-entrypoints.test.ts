@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { STAFF_ACQUISITION_ROUTES } from "@/lib/acquisition/routes";
 const assign = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/acquisition/assignment-store", () => ({ assignAcquisitionContact: assign }));
 import { applyLiveAcquisitionRouteTag, applyLiveAcquisitionRouteTagBySlug } from "@/lib/minimum-launch/live";
@@ -20,5 +21,12 @@ describe("LIFF and webhook acquisition assignment entrypoints", () => {
     expect(await applyLiveAcquisitionRouteTag({ ...common, text: "こんにちは" })).toEqual({ matched: false });
     expect(await applyLiveAcquisitionRouteTagBySlug({ ...common, slug: "unknown" })).toEqual({ matched: false });
     expect(assign).not.toHaveBeenCalled();
+  });
+  it.each(STAFF_ACQUISITION_ROUTES)("carries $slug through both verified LIFF and fallback message entrypoints", async route => {
+    await expect(applyLiveAcquisitionRouteTagBySlug({ ...common, slug: route.slug })).rejects.toThrow("stop-before-tag");
+    await expect(applyLiveAcquisitionRouteTag({ ...common, text: route.registrationMessage })).rejects.toThrow("stop-before-tag");
+    expect(assign).toHaveBeenCalledTimes(2);
+    expect(assign).toHaveBeenNthCalledWith(1, client, "test-org", "test-contact", route.slug);
+    expect(assign).toHaveBeenNthCalledWith(2, client, "test-org", "test-contact", route.slug);
   });
 });
