@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAuthMode } from "@/lib/auth/config";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { assignmentRuleSchema, type AssignmentRule, type AssignmentSettings } from "@/lib/acquisition/assignment";
+import { acquisitionRouteBySlug } from "@/lib/acquisition/routes";
 
 const mockState = globalThis as typeof globalThis & { __lineCrmMockAssignmentRules?: Map<string, AssignmentRule[]> };
 function mockRules() {
@@ -37,8 +38,13 @@ export async function saveAssignmentRule(organizationId: string, actorId: string
 }
 
 export async function assignAcquisitionContact(client: SupabaseClient, organizationId: string, contactId: string, routeSlug: string): Promise<void> {
-  const { error } = await client.rpc("assign_acquisition_contact", {
+  const { data, error } = await client.rpc("assign_acquisition_contact", {
     target_organization_id: organizationId, target_contact_id: contactId, target_route_slug: routeSlug
   });
   if (error) throw new Error("流入経路の担当者を割り当てできませんでした。");
+  // Old/unapplied migrations return disabled for unknown slugs. Never report a
+  // successful dedicated-link registration unless the DB handled assignment.
+  if (acquisitionRouteBySlug(routeSlug)?.fixedAssigneeName && !["assigned", "duplicate", "preserved"].includes(data?.status)) {
+    throw new Error("専用URLの担当者設定が準備できていません。");
+  }
 }

@@ -4,6 +4,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const migration = readFileSync("supabase/migrations/20260919010000_acquisition_assignment.sql", "utf8");
+const staffMigration = readFileSync("supabase/migrations/20260919020000_staff_acquisition_links.sql", "utf8");
 const inboxMigration = readFileSync("supabase/migrations/20260712020000_milestone_2_inbox.sql", "utf8");
 const ensureConversation = inboxMigration.match(/create or replace function public.ensure_conversation_for_contact[\s\S]*?\$\$;/)?.[0];
 const org = randomUUID();
@@ -46,6 +47,8 @@ beforeAll(async () => {
   await db.exec(ensureConversation);
   await db.exec(migration);
   await db.exec(migration); // Applying the new migration twice remains safe.
+  await db.exec(staffMigration);
+  await db.exec(staffMigration);
   await db.query("insert into organizations values ($1),($2)", [org, otherOrg]);
   await db.query("insert into profiles values ($1)", [actor]);
   await db.query("insert into organization_members values ($1,$2,'owner')", [org, actor]);
@@ -77,6 +80,7 @@ describe("actual PostgreSQL assignment migration", () => {
     expect((await db.query<{ next_index: number }>("select next_index::int from acquisition_assignment_rules")).rows[0].next_index).toBe(40);
     // PGlite is single-connection; assert the production SQL has both row locks.
     expect(migration.match(/for update;/g)).toHaveLength(2);
+    expect(staffMigration.match(/for update;/g)).toHaveLength(2);
   });
 
   it("preserves an existing login assignee without advancing the sequence", async () => {
@@ -137,5 +141,50 @@ describe("actual PostgreSQL assignment migration", () => {
     const next = await contact(); await assign(next); expect((await name(next)).assignee_name).toBe(names[1]);
     await save([...names].reverse());
     const reordered = await contact(); await assign(reordered); expect((await name(reordered)).assignee_name).toBe(names[3]);
+  });
+
+  it.each([["meeting-imafuku", "今福"], ["meeting-shimizu", "志水"], ["meeting-uoi", "魚井"], ["meeting-nishita", "西田"]])("assigns %s to %s without a shared rule", async (slug, expected) => {
+    const id = await contact();
+    expect(await assign(id, slug)).toBe("assigned");
+    expect((await name(id)).assignee_name).toBe(expected);
+    expect(await assign(id, slug)).toBe("duplicate");
+    expect((await db.query<{ count: number }>("select count(*)::int as count from profiles")).rows[0].count).toBe(1);
+  });
+
+  it("never consumes shared sequence positions and works while round robin is disabled", async () => {
+    await save(); await assign(await contact());
+    await assign(await contact(), "meeting-imafuku");
+    await save(names, false);
+    expect(await assign(await contact(), "meeting-shimizu")).toBe("assigned");
+    await save();
+    const next = await contact(); await assign(next);
+    expect((await name(next)).assignee_name).toBe(names[1]);
+  });
+
+  it("keeps the first assignment across dedicated and shared links and manual unassignment", async () => {
+    await save();
+    const id = await contact(); await assign(id, "meeting-uoi");
+    expect(await assign(id, "meeting-nishita")).toBe("duplicate");
+    expect(await assign(id)).toBe("duplicate");
+    expect((await name(id)).assignee_name).toBe("魚井");
+    await db.query("update conversations set assignee_name=null where contact_id=$1", [id]);
+    expect(await assign(id, "meeting-imafuku")).toBe("duplicate");
+    expect((await name(id)).assignee_name).toBeNull();
+    const shared = await contact(); await assign(shared);
+    expect(await assign(shared, "meeting-nishita")).toBe("duplicate");
+    expect((await name(shared)).assignee_name).toBe(names[0]);
+  });
+
+  it("preserves both existing assignee kinds on dedicated links and rejects foreign contacts", async () => {
+    const login = await contact();
+    await db.query("insert into conversations(organization_id,contact_id,assignee_profile_id) values ($1,$2,$3)", [org,login,actor]);
+    expect(await assign(login, "meeting-imafuku")).toBe("preserved");
+    expect((await name(login)).assignee_profile_id).toBe(actor);
+    const manual = await contact();
+    await db.query("insert into conversations(organization_id,contact_id,assignee_name) values ($1,$2,'手動担当')", [org,manual]);
+    expect(await assign(manual, "meeting-shimizu")).toBe("preserved");
+    expect((await name(manual)).assignee_name).toBe("手動担当");
+    await expect(assign(await contact(otherOrg), "meeting-uoi")).rejects.toThrow("Contact not found");
+    expect(await assign(await contact(), "meeting-arbitrary")).toBe("disabled");
   });
 });

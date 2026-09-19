@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ACQUISITION_ROUTES,
+  SHARED_ACQUISITION_ROUTES,
+  STAFF_ACQUISITION_ROUTES,
   acquisitionRouteByMessage,
   acquisitionRouteBySlug,
   buildLineAcquisitionUrl,
@@ -10,12 +12,27 @@ import {
 
 describe("acquisition source links", () => {
   it("defines the three production routes and their tag names", () => {
-    expect(ACQUISITION_ROUTES.map((route) => ({ slug: route.slug, tag: route.tagName }))).toEqual([
+    expect(SHARED_ACQUISITION_ROUTES.map((route) => ({ slug: route.slug, tag: route.tagName }))).toEqual([
       { slug: "meeting", tag: "面談から流入" },
       { slug: "survey", tag: "アンケート経由" },
       { slug: "hp", tag: "HP経由" }
     ]);
     expect(acquisitionRouteBySlug("unknown")).toBeNull();
+  });
+
+  it("maps four dedicated links to fixed staff and preserves the source in LIFF and fallback links", () => {
+    expect(STAFF_ACQUISITION_ROUTES.map(route => [route.slug, route.fixedAssigneeName])).toEqual([
+      ["meeting-imafuku", "今福"], ["meeting-shimizu", "志水"], ["meeting-uoi", "魚井"], ["meeting-nishita", "西田"]
+    ]);
+    expect(new Set(ACQUISITION_ROUTES.map(route => route.slug)).size).toBe(7);
+    expect(new Set(ACQUISITION_ROUTES.map(route => route.registrationMessage)).size).toBe(7);
+    for (const route of STAFF_ACQUISITION_ROUTES) {
+      expect(route.tagName).toBe("面談から流入");
+      expect(acquisitionRouteByMessage(route.registrationMessage)?.slug).toBe(route.slug);
+      expect(new URL(buildLineLiffAcquisitionUrl("2000000000-AbCdEf12", route)).searchParams.get("source")).toBe(route.slug);
+      const fallback = new URL(buildLineAcquisitionUrl("@example", route));
+      expect(acquisitionRouteByMessage(decodeURIComponent(fallback.search.slice(1)))?.fixedAssigneeName).toBe(route.fixedAssigneeName);
+    }
   });
 
   it("matches only the complete normalized registration message", () => {

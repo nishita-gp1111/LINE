@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { ACQUISITION_ROUTE_SLUGS } from "@/lib/acquisition/routes";
+import { SHARED_ACQUISITION_ROUTE_SLUGS } from "@/lib/acquisition/routes";
 
 export const assignmentRuleSchema = z.object({
-  routeSlug: z.enum(ACQUISITION_ROUTE_SLUGS),
+  routeSlug: z.enum(SHARED_ACQUISITION_ROUTE_SLUGS),
   staffNames: z.array(z.string().trim().min(1).max(40)).max(20),
   enabled: z.boolean()
 }).refine(value => !value.enabled || value.staffNames.length > 0, "担当者を1名以上指定してください。")

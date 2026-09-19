@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ACQUISITION_ROUTES } from "@/lib/acquisition/routes";
+import { SHARED_ACQUISITION_ROUTES, STAFF_ACQUISITION_ROUTES } from "@/lib/acquisition/routes";
 import { AssignmentEditor } from "@/app/admin/acquisition/assignment-editor";
 import type { AssignmentSettings } from "@/lib/acquisition/assignment";
 
@@ -44,8 +44,25 @@ export function AcquisitionLinksClient({ appUrl, automaticTagging, assignments, 
           </p>
         </section>
 
-        <section className="mt-6 grid gap-4 md:grid-cols-2">
-          {ACQUISITION_ROUTES.map((route, index) => {
+        <section className="mt-6" aria-labelledby="staff-meeting-links-title">
+          <h2 id="staff-meeting-links-title" className="text-xl font-black">担当者別の面談URL</h2>
+          <p className="mt-2 text-sm leading-6 text-ink/65">各担当者から案内する場合はこちら。未担当のお客様を、そのURLの担当者へ固定で割り当てます。共通アカウントのまま使えます。</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {STAFF_ACQUISITION_ROUTES.map(route => <article key={route.slug} aria-label={`${route.fixedAssigneeName}さん専用URL`} className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-3"><h3 className="text-lg font-black">{route.label}</h3><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">固定担当：{route.fixedAssigneeName}</span></div>
+              <p className="mt-4 break-all rounded-xl bg-paper p-3 text-sm font-bold text-ink/75">{routeUrl(route.slug)}</p>
+              <p className="mt-3 text-xs text-ink/55">付与タグ：面談から流入</p>
+              <div className="mt-4 flex gap-2"><button type="button" aria-label={`${route.fixedAssigneeName}さん用URLをコピー`} onClick={() => void copy(route.slug)} className="focus-ring flex-1 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white">{copied === route.slug ? "コピーしました ✓" : "専用URLをコピー"}</button><a href={routeUrl(route.slug)} target="_blank" rel="noreferrer" className="focus-ring rounded-xl border border-line px-4 py-3 text-sm font-bold">開く</a></div>
+            </article>)}
+          </div>
+          <p className="mt-3 text-xs leading-6 text-ink/55">既に担当者がいる方は、その担当者を維持します。複数の専用URLを開いても、最初に決まった担当者から変更しません。専用URLは共通URLの順番を進めず、共通URLの振り分けを停止しても使えます。</p>
+        </section>
+
+        <section className="mt-10" aria-labelledby="shared-acquisition-links-title">
+          <h2 id="shared-acquisition-links-title" className="text-xl font-black">共通の友だち追加URL</h2>
+          <p className="mt-2 text-sm text-ink/65">担当者を指定せず、これまでどおり案内する場合はこちら。</p>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+          {SHARED_ACQUISITION_ROUTES.map((route, index) => {
             const url = routeUrl(route.slug);
             return <article key={route.slug} className="rounded-2xl border border-line bg-white p-5 shadow-sm sm:p-6">
               <div className="flex items-start justify-between gap-4"><div><span className={`grid size-10 place-items-center rounded-xl text-sm font-black text-white ${routeColors[index % routeColors.length]}`}>{index + 1}</span><h2 className="mt-4 text-xl font-black">{route.label}</h2><p className="mt-1 text-xs leading-5 text-ink/50">{route.description}</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black text-emerald-700">有効</span></div>
@@ -55,6 +72,7 @@ export function AcquisitionLinksClient({ appUrl, automaticTagging, assignments, 
               <AssignmentEditor route={route} initial={assignments.rules.find(rule => rule.routeSlug === route.slug)} available={assignments.available} canManage={canManage} />
             </article>;
           })}
+          </div>
         </section>
       </div>
     </main>

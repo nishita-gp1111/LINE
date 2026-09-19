@@ -1,4 +1,5 @@
-export const ACQUISITION_ROUTE_SLUGS = ["meeting", "survey", "hp"] as const;
+export const SHARED_ACQUISITION_ROUTE_SLUGS = ["meeting", "survey", "hp"] as const;
+export const ACQUISITION_ROUTE_SLUGS = [...SHARED_ACQUISITION_ROUTE_SLUGS, "meeting-imafuku", "meeting-shimizu", "meeting-uoi", "meeting-nishita"] as const;
 
 export type AcquisitionRouteSlug = (typeof ACQUISITION_ROUTE_SLUGS)[number];
 
@@ -8,9 +9,10 @@ export type AcquisitionRoute = {
   tagName: string;
   registrationMessage: string;
   description: string;
+  fixedAssigneeName?: string;
 };
 
-export const ACQUISITION_ROUTES: readonly AcquisitionRoute[] = [
+export const SHARED_ACQUISITION_ROUTES: readonly AcquisitionRoute[] = [
   {
     slug: "meeting",
     label: "面談から流入",
@@ -33,6 +35,16 @@ export const ACQUISITION_ROUTES: readonly AcquisitionRoute[] = [
     description: "会社ホームページなどに設置する友だち追加URLです。"
   }
 ] as const;
+
+export const STAFF_ACQUISITION_ROUTES: readonly (AcquisitionRoute & { fixedAssigneeName: string })[] = [
+  { slug: "meeting-imafuku", fixedAssigneeName: "今福", label: "今福さん専用", tagName: "面談から流入", registrationMessage: "面談経由（今福担当）で友だち追加しました", description: "今福さんが担当する面談の友だち追加URLです。" },
+  { slug: "meeting-shimizu", fixedAssigneeName: "志水", label: "志水さん専用", tagName: "面談から流入", registrationMessage: "面談経由（志水担当）で友だち追加しました", description: "志水さんが担当する面談の友だち追加URLです。" },
+  { slug: "meeting-uoi", fixedAssigneeName: "魚井", label: "魚井さん専用", tagName: "面談から流入", registrationMessage: "面談経由（魚井担当）で友だち追加しました", description: "魚井さんが担当する面談の友だち追加URLです。" },
+  { slug: "meeting-nishita", fixedAssigneeName: "西田", label: "西田さん専用", tagName: "面談から流入", registrationMessage: "面談経由（西田担当）で友だち追加しました", description: "西田さんが担当する面談の友だち追加URLです。" }
+];
+
+export const ACQUISITION_ROUTES: readonly AcquisitionRoute[] = [...SHARED_ACQUISITION_ROUTES, ...STAFF_ACQUISITION_ROUTES];
+export const FIXED_ASSIGNEE_NAMES = STAFF_ACQUISITION_ROUTES.map(route => route.fixedAssigneeName);
 
 function normalizeMessage(value: string): string {
   return value.normalize("NFKC").replace(/\s+/g, " ").trim();

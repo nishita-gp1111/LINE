@@ -5,6 +5,7 @@ import { getInboxStore } from "@/lib/inbox/store";
 import { getServerEnv } from "@/lib/env/server";
 import { markLineChatAsRead } from "@/lib/line/read";
 import { getAssignmentSettings } from "@/lib/acquisition/assignment-store";
+import { FIXED_ASSIGNEE_NAMES } from "@/lib/acquisition/routes";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
       if (assigneeName) {
         const settings = await getAssignmentSettings(auth.organizationId);
         if (!settings.available) return NextResponse.json({ ok: false, error: "担当者設定を読み込めませんでした。" }, { status: 503 });
-        if (!settings.rules.some(rule => rule.staffNames.includes(assigneeName))) return NextResponse.json({ ok: false, error: "登録済みの担当者名を指定してください。" }, { status: 400 });
+        if (!FIXED_ASSIGNEE_NAMES.includes(assigneeName) && !settings.rules.some(rule => rule.staffNames.includes(assigneeName))) return NextResponse.json({ ok: false, error: "登録済みの担当者名を指定してください。" }, { status: 400 });
       }
       if (assigneeProfileId && auth.role !== "admin" && auth.role !== "owner" && assigneeProfileId !== auth.profileId) return NextResponse.json({ ok: false, error: "担当者を変更できません。" }, { status: 403 });
       if (assigneeProfileId && !(await store.listProfiles(auth.organizationId)).some((profile) => profile.id === assigneeProfileId)) return NextResponse.json({ ok: false, error: "同じorganizationの担当者を指定してください。" }, { status: 400 });
