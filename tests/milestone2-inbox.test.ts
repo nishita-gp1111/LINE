@@ -29,6 +29,20 @@ function event(name: string) {
 }
 
 describe("Milestone 2 conversation foundation", () => {
+  it("supports named assignees with shared login, manual changes, and unassigned filtering", async () => {
+    const store = new MockWebhookStore();
+    await processWebhookEvent(event("text"), store, { organizationId, profileClient });
+    const query = { organizationId, profileId: "mock-user", filter: "unassigned" as const, page: 1, pageSize: 50 };
+    const conversation = (await store.listConversations(query)).items[0]!.conversation;
+    await store.updateConversation(organizationId, conversation.id, "mock-user", "owner", { assigneeName: "担当A", assigneeProfileId: null });
+    expect((await store.getConversation(organizationId, conversation.id, "mock-user"))?.conversation.assigneeName).toBe("担当A");
+    expect((await store.listConversations(query)).total).toBe(0);
+    await store.updateConversation(organizationId, conversation.id, "mock-user", "owner", { assigneeName: "担当B" });
+    expect((await store.getConversation(organizationId, conversation.id, "mock-user"))?.conversation.assigneeName).toBe("担当B");
+    await store.updateConversation(organizationId, conversation.id, "mock-user", "owner", { assigneeName: null, assigneeProfileId: null });
+    expect((await store.listConversations(query)).total).toBe(1);
+    await expect(store.updateConversation(organizationId, conversation.id, "viewer", "viewer", { assigneeName: "担当C" })).rejects.toThrow();
+  });
   it("creates a conversation and increments CRM unread only once for redelivery", async () => {
     const store = new MockWebhookStore();
     const context = { organizationId, profileClient };

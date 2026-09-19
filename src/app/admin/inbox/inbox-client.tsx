@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ContactTagsPanel } from "@/components/contact-tags-panel";
 import { friendStatusPresentation } from "@/lib/contacts/status";
+import { assigneeOptionValue, assigneeUpdate } from "@/lib/acquisition/assignment";
 import type {
   ConversationDetail,
   ConversationListItem,
@@ -28,6 +29,7 @@ type Props = {
   selected: (Omit<ConversationDetail, "messages"> & { messages: PublicMessage[] }) | null;
   quickReplies: QuickReplyTemplate[];
   profiles: ProfileSummary[];
+  staffNames: string[];
   authProfileId: string;
   role: InboxRole;
   filter: InboxFilter;
@@ -324,6 +326,7 @@ export default function InboxClient(props: Props) {
                     <span className="shrink-0 text-[10px] text-ink/35">{date(item.conversation.lastMessageAt)}</span>
                   </div>
                   <p className="mt-1 truncate text-xs text-ink/55">{item.conversation.lastMessagePreview || "会話を開始"}</p>
+                  {item.conversation.assigneeName || item.assignee?.displayName ? <p className="mt-1 truncate text-[10px] font-bold text-emerald-700">担当：{item.conversation.assigneeName || item.assignee?.displayName}</p> : null}
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <span className={`rounded px-1.5 py-0.5 text-[9px] font-black ${statusColor(item.conversation.status)}`}>{statusLabel(item.conversation.status)}</span>
                     {item.readState.unreadCount > 0 ? <span className="grid min-w-5 place-items-center rounded-full bg-coral px-1.5 py-0.5 text-[9px] font-black text-white">{item.readState.unreadCount}</span> : <span className="text-[9px] text-ink/30">確認済み</span>}
@@ -428,7 +431,7 @@ export default function InboxClient(props: Props) {
               <h3 className="text-xs font-black text-ink/45">対応状況</h3>
               <div className="mt-3 grid gap-3">
                 <label className="grid grid-cols-[72px_1fr] items-center gap-2 text-xs"><span className="font-bold text-ink/55">ステータス</span><select disabled={!canOperate || working} value={selected.conversation.status} onChange={(event) => void perform({ action: "update", conversationId: selected.conversation.id, status: event.target.value })} className="focus-ring min-h-9 rounded-lg border border-line px-2 text-xs"><option value="open">対応中</option><option value="pending">保留</option><option value="closed">完了</option></select></label>
-                <label className="grid grid-cols-[72px_1fr] items-center gap-2 text-xs"><span className="font-bold text-ink/55">担当者</span><select disabled={!canOperate || working} value={selected.conversation.assigneeProfileId || ""} onChange={(event) => void perform({ action: "update", conversationId: selected.conversation.id, assigneeProfileId: event.target.value || null })} className="focus-ring min-h-9 rounded-lg border border-line px-2 text-xs"><option value="">未担当</option>{props.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.displayName}</option>)}</select></label>
+                <label className="grid grid-cols-[72px_1fr] items-center gap-2 text-xs"><span className="font-bold text-ink/55">担当者</span><select aria-label="担当者" disabled={!canOperate || working} value={assigneeOptionValue(selected.conversation)} onChange={(event) => void perform({ action: "update", conversationId: selected.conversation.id, ...assigneeUpdate(event.target.value) })} className="focus-ring min-h-9 rounded-lg border border-line px-2 text-xs"><option value="">未担当</option>{[...new Set([...props.staffNames, ...(selected.conversation.assigneeName ? [selected.conversation.assigneeName] : [])])].map(name => <option key={`name:${name}`} value={`name:${name}`}>{name}</option>)}{props.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.displayName}（ログイン担当）</option>)}</select></label>
                 <label className="grid grid-cols-[72px_1fr] items-center gap-2 text-xs"><span className="font-bold text-ink/55">優先度</span><select disabled={!canOperate || working} value={selected.conversation.priority} onChange={(event) => void perform({ action: "update", conversationId: selected.conversation.id, priority: event.target.value as ConversationPriority })} className="focus-ring min-h-9 rounded-lg border border-line px-2 text-xs"><option value="normal">通常</option><option value="high">高</option></select></label>
               </div>
             </section>

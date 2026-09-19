@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { acquisitionRouteByMessage, acquisitionRouteBySlug, type AcquisitionRoute } from "@/lib/acquisition/routes";
+import { assignAcquisitionContact } from "@/lib/acquisition/assignment-store";
 import { getServerEnv } from "@/lib/env/server";
 import {
   assertControlledRecipient,
@@ -208,6 +209,7 @@ export async function assignLiveTag(input: { client: SupabaseClient; organizatio
 
 async function applyAcquisitionRoute(input: { client: SupabaseClient; organizationId: string; contactId: string; route: AcquisitionRoute }): Promise<{ matched: true; slug: string; tagName: string; duplicate: boolean }> {
   const route = input.route;
+  await assignAcquisitionContact(input.client, input.organizationId, input.contactId, route.slug);
   const profileId = await systemProfileId(input.client, input.organizationId);
   const existing = await input.client.from("tags").select("id, name").eq("organization_id", input.organizationId).eq("name", route.tagName).eq("is_active", true).maybeSingle();
   if (existing.error) throw new Error("流入経路タグを取得できませんでした。");

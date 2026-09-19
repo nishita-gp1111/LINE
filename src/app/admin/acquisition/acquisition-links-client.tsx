@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { ACQUISITION_ROUTES } from "@/lib/acquisition/routes";
+import { AssignmentEditor } from "@/app/admin/acquisition/assignment-editor";
+import type { AssignmentSettings } from "@/lib/acquisition/assignment";
 
-export function AcquisitionLinksClient({ appUrl, automaticTagging }: { appUrl: string; automaticTagging: boolean }) {
+export function AcquisitionLinksClient({ appUrl, automaticTagging, assignments, canManage }: { appUrl: string; automaticTagging: boolean; assignments: AssignmentSettings; canManage: boolean }) {
   const [copied, setCopied] = useState<string | null>(null);
   const routeColors = ["bg-emerald-600", "bg-sky-600", "bg-orange-500"] as const;
 
@@ -50,6 +52,7 @@ export function AcquisitionLinksClient({ appUrl, automaticTagging }: { appUrl: s
               <div className="mt-5 rounded-xl bg-paper p-3"><p className="text-[10px] font-black uppercase tracking-wider text-ink/35">共有URL</p><p className="mt-1 break-all text-sm font-bold text-ink/75">{url}</p></div>
               <dl className="mt-4 grid gap-2 text-xs"><div className="flex justify-between gap-3"><dt className="text-ink/45">付与タグ</dt><dd className="font-black">{route.tagName}</dd></div><div className="flex justify-between gap-3"><dt className="text-ink/45">登録方法</dt><dd className="text-right font-bold">{automaticTagging ? "友だち追加後に自動反映" : `予備文面: ${route.registrationMessage}`}</dd></div></dl>
               <div className="mt-5 flex gap-2"><button type="button" onClick={() => void copy(route.slug)} className="focus-ring flex-1 rounded-xl bg-ink px-4 py-3 text-sm font-black text-white">{copied === route.slug ? "コピーしました ✓" : "URLをコピー"}</button><a href={url} target="_blank" rel="noreferrer" className="focus-ring rounded-xl border border-line bg-white px-4 py-3 text-sm font-black text-ink/65">開く</a></div>
+              <AssignmentEditor route={route} initial={assignments.rules.find(rule => rule.routeSlug === route.slug)} available={assignments.available} canManage={canManage} />
             </article>;
           })}
         </section>

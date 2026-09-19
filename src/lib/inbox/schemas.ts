@@ -8,7 +8,7 @@ export const textMessageSchema = lineTextMessageSchema;
 
 export const inboxActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("read"), conversationId: conversationIdSchema, lastMessageId: z.string().nullable().optional() }),
-  z.object({ action: z.literal("update"), conversationId: conversationIdSchema, status: z.enum(["open", "pending", "closed"]).optional(), assigneeProfileId: z.string().nullable().optional(), priority: z.enum(["normal", "high"]).optional() }),
+  z.object({ action: z.literal("update"), conversationId: conversationIdSchema, status: z.enum(["open", "pending", "closed"]).optional(), assigneeProfileId: z.string().nullable().optional(), assigneeName: z.string().trim().min(1).max(40).nullable().optional(), priority: z.enum(["normal", "high"]).optional() }),
   z.object({ action: z.literal("note_create"), conversationId: conversationIdSchema, body: z.string().trim().min(1).max(5000) }),
   z.object({ action: z.literal("note_update"), noteId: conversationIdSchema, body: z.string().trim().min(1).max(5000) }),
   z.object({ action: z.literal("note_delete"), noteId: conversationIdSchema })

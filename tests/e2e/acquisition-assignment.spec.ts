@@ -1,0 +1,37 @@
+import { expect, test } from "@playwright/test";
+import { createHmac } from "node:crypto";
+import { getLineFixture } from "../../src/lib/line/fixtures";
+
+test("shared login can configure, change conversation assignee, persist, and stop four-person assignment", async ({ page, request }) => {
+  await page.goto("/login");
+  await page.getByLabel("メールアドレス").fill("owner@example.local");
+  await page.getByRole("button", { name: "ログイン", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.goto("/admin/acquisition");
+  const panel = page.getByRole("region", { name: "面談から流入の担当者振り分け", exact: true });
+  await panel.getByRole("textbox", { name: "面談から流入の担当者名" }).fill("担当A\n担当B\n担当C\n担当D");
+  await panel.getByRole("checkbox").check();
+  await panel.getByRole("button", { name: "振り分け設定を保存" }).click();
+  await expect(panel.getByRole("status")).toContainText("保存しました");
+  await page.reload();
+  await expect(panel.getByRole("textbox")).toHaveValue("担当A\n担当B\n担当C\n担当D");
+  await expect(panel.getByText("稼働中", { exact: true })).toBeVisible();
+  await expect(panel.getByText("担当A → 担当B → 担当C → 担当D → 先頭へ")).toBeVisible();
+  const body = JSON.stringify(getLineFixture("text"));
+  const webhook = await request.post("/api/line/webhook", { data: body, headers: { "Content-Type": "application/json", "x-line-signature": createHmac("sha256", "e2e-secret").update(body).digest("base64") } });
+  expect(webhook.status()).toBe(200);
+  await page.goto("/admin/inbox");
+  await page.getByRole("combobox", { name: "担当者", exact: true }).selectOption({ label: "担当B" });
+  await expect(page.getByRole("combobox", { name: "担当者", exact: true })).toHaveValue("name:担当B");
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "担当者", exact: true })).toHaveValue("name:担当B");
+  await expect(page.getByText("担当：担当B", { exact: true })).toBeVisible();
+  await page.getByRole("combobox", { name: "担当者", exact: true }).selectOption({ label: "未担当" });
+  await expect(page.getByRole("combobox", { name: "担当者", exact: true })).toHaveValue("");
+  await page.goto("/admin/acquisition");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await panel.getByRole("checkbox").uncheck();
+  await panel.getByRole("button", { name: "振り分け設定を保存" }).click();
+  await expect(panel.getByRole("status")).toContainText("停止");
+});

@@ -4,6 +4,7 @@ import { getInboxData } from "@/lib/inbox/queries";
 import type { InboxFilter } from "@/lib/inbox/types";
 import InboxClient from "@/app/admin/inbox/inbox-client";
 import { toPublicMessage } from "@/lib/inbox/public";
+import { getAssignmentSettings } from "@/lib/acquisition/assignment-store";
 
 const filters: Array<{ value: InboxFilter; label: string }> = [
   { value: "all", label: "すべて" },
@@ -37,12 +38,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const resultPromise = data.store.listConversations({ organizationId: data.auth.organizationId, profileId: data.auth.profileId, filter, search, page, pageSize: 50, ownerSearchLineUserId: data.auth.role === "owner" || data.auth.role === "admin" ? one(params.lineUserId) : undefined });
   const quickRepliesPromise = data.store.listQuickReplies(data.auth.organizationId);
   const profilesPromise = data.store.listProfiles(data.auth.organizationId);
+  const assignmentPromise = getAssignmentSettings(data.auth.organizationId);
   const result = await resultPromise;
   const selectedId = one(params.conversation) || result.items[0]?.conversation.id;
-  const [detail, quickReplies, profiles] = await Promise.all([
+  const [detail, quickReplies, profiles, assignmentSettings] = await Promise.all([
     selectedId ? data.store.getConversation(data.auth.organizationId, selectedId, data.auth.profileId) : Promise.resolve(null),
     quickRepliesPromise,
-    profilesPromise
+    profilesPromise,
+    assignmentPromise
   ]);
   const safeDetail = detail ? { ...detail, messages: detail.messages.map(toPublicMessage) } : null;
   const env = getServerEnv();
@@ -60,7 +63,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           </div>
           <div className="flex gap-2"><Link href="/admin/contacts" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">顧客一覧</Link><Link href="/admin/settings/quick-replies" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">クイック返信設定</Link></div>
         </div>
-        <InboxClient items={result.items} total={result.total} page={result.page} pageSize={result.pageSize} filters={filters} selected={safeDetail} quickReplies={quickReplies} profiles={profiles} authProfileId={data.auth.profileId} role={data.auth.role} filter={filter} search={search} canSend={canSend} canSendMedia={canSendMedia} mockMode={env.MOCK_LINE_API} />
+        <InboxClient items={result.items} total={result.total} page={result.page} pageSize={result.pageSize} filters={filters} selected={safeDetail} quickReplies={quickReplies} profiles={profiles} staffNames={[...new Set(assignmentSettings.rules.flatMap(rule => rule.staffNames))]} authProfileId={data.auth.profileId} role={data.auth.role} filter={filter} search={search} canSend={canSend} canSendMedia={canSendMedia} mockMode={env.MOCK_LINE_API} />
       </div>
     </main>
   );

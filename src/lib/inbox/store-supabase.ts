@@ -41,7 +41,7 @@ function mapAttachment(row: Row): MessageAttachmentRecord {
 }
 
 function mapConversation(row: Row): ConversationRecord {
-  return { id: String(row.id), organizationId: String(row.organization_id), contactId: String(row.contact_id), status: row.status as ConversationRecord["status"], assigneeProfileId: asString(row.assignee_profile_id), priority: row.priority as ConversationRecord["priority"], lastMessageAt: asString(row.last_message_at), lastInboundAt: asString(row.last_inbound_at), lastOutboundAt: asString(row.last_outbound_at), lastMessagePreview: asString(row.last_message_preview), lastMessageDirection: row.last_message_direction as ConversationRecord["lastMessageDirection"], reopenedAt: asString(row.reopened_at), closedAt: asString(row.closed_at), createdAt: String(row.created_at), updatedAt: String(row.updated_at) };
+  return { id: String(row.id), organizationId: String(row.organization_id), contactId: String(row.contact_id), status: row.status as ConversationRecord["status"], assigneeProfileId: asString(row.assignee_profile_id), assigneeName: asString(row.assignee_name), priority: row.priority as ConversationRecord["priority"], lastMessageAt: asString(row.last_message_at), lastInboundAt: asString(row.last_inbound_at), lastOutboundAt: asString(row.last_outbound_at), lastMessagePreview: asString(row.last_message_preview), lastMessageDirection: row.last_message_direction as ConversationRecord["lastMessageDirection"], reopenedAt: asString(row.reopened_at), closedAt: asString(row.closed_at), createdAt: String(row.created_at), updatedAt: String(row.updated_at) };
 }
 
 function mapReadState(row: Row, organizationId: string, conversationId: string, profileId: string): ConversationReadState {
@@ -124,7 +124,7 @@ export class SupabaseInboxStore implements InboxStore {
     else if (searchConversationIds.length) request = request.in("id", searchConversationIds);
     if (["open", "pending", "closed"].includes(query.filter)) request = request.eq("status", query.filter);
     if (query.filter === "mine") request = request.eq("assignee_profile_id", query.profileId);
-    if (query.filter === "unassigned") request = request.is("assignee_profile_id", null);
+    if (query.filter === "unassigned") request = request.is("assignee_profile_id", null).is("assignee_name", null);
     if (query.filter === "high") request = request.eq("priority", "high");
     if (query.filter === "unread") {
       const unread = await this.client.from("conversation_read_states").select("conversation_id").eq("organization_id", query.organizationId).eq("profile_id", query.profileId).gt("unread_count", 0);
@@ -205,7 +205,8 @@ export class SupabaseInboxStore implements InboxStore {
     const payload: Row = { updated_at: new Date().toISOString() };
     if (update.status) { payload.status = update.status; payload.closed_at = update.status === "closed" ? new Date().toISOString() : null; }
     if (update.priority) payload.priority = update.priority;
-    if (update.assigneeProfileId !== undefined) payload.assignee_profile_id = update.assigneeProfileId;
+    if (update.assigneeProfileId !== undefined) { payload.assignee_profile_id = update.assigneeProfileId; payload.assignee_name = null; }
+    if (update.assigneeName !== undefined) { payload.assignee_name = update.assigneeName; if (update.assigneeName) payload.assignee_profile_id = null; }
     const { data, error } = await this.client.from("conversations").update(payload).eq("organization_id", organizationId).eq("id", conversationId).select("*").single();
     if (error) throw new Error("会話を更新できませんでした。");
     return mapConversation(data as Row);
