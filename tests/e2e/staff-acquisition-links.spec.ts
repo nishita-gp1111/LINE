@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const staff = [["meeting-imafuku", "今福"], ["meeting-shimizu", "志水"], ["meeting-uoi", "魚井"], ["meeting-nishita", "西田"]];
 
-test("four dedicated links are copyable while the existing shared links remain available", async ({ page, context }) => {
+test("four dedicated links are copyable while the existing shared links remain available", async ({ page, context }, testInfo) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/login");
   await page.getByLabel("メールアドレス").fill("owner@example.local");
@@ -20,11 +20,13 @@ test("four dedicated links are copyable while the existing shared links remain a
   for (const slug of ["meeting", "survey", "hp"]) {
     await expect(page.locator(`a[href="http://127.0.0.1:3000/add/${slug}"]`)).toHaveCount(1);
   }
+  await page.screenshot({ path: testInfo.outputPath("staff-links-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("staff-links-mobile.png"), fullPage: true });
 });
 
-test("each public landing page keeps its staff source in the LINE link and desktop QR", async ({ page }) => {
+test("each public landing page keeps its staff source in the LINE link and desktop QR", async ({ page }, testInfo) => {
   // Only inspect links; never open LINE or send messages in browser tests.
   for (const [slug, name] of staff) {
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -34,10 +36,12 @@ test("each public landing page keeps its staff source in the LINE link and deskt
     expect(decodeURIComponent(href || "")).toContain(`面談経由（${name}担当）で友だち追加しました`);
     await expect(page.locator("[data-qr-destination]")).toHaveAttribute("data-qr-destination", href!);
     await expect(page.getByRole("complementary", { name: "パソコン用QRコード" })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`${slug}-desktop.png`), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole("link", { name: "LINEアプリを開く", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expect(page.locator("[data-qr-destination]")).toBeHidden();
+    await page.screenshot({ path: testInfo.outputPath(`${slug}-mobile.png`), fullPage: true });
   }
   expect((await page.goto("/add/meeting-arbitrary"))?.status()).toBe(404);
 });
