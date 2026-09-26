@@ -159,14 +159,14 @@ export class SupabaseInboxStore implements InboxStore {
     const conversation = mapConversation(conversationRow as Row);
     const [contactResponse, messageResponse, noteResponse, profiles, readState] = await Promise.all([
       this.client.from("contacts").select("*").eq("organization_id", organizationId).eq("id", conversation.contactId).single(),
-      this.client.from("messages").select("*").eq("organization_id", organizationId).eq("conversation_id", conversationId).order("line_event_timestamp", { ascending: true }).limit(200),
+      this.client.from("messages").select("*").eq("organization_id", organizationId).eq("conversation_id", conversationId).order("line_event_timestamp", { ascending: false }).order("id", { ascending: false }).limit(200),
       this.client.from("conversation_notes").select("*").eq("organization_id", organizationId).eq("conversation_id", conversationId).is("deleted_at", null).order("created_at", { ascending: true }),
       this.profileMap(),
       this.readState(conversationId, profileId)
     ]);
     if (!contactResponse.data) return null;
     const contact = mapContact(contactResponse.data as Row);
-    return { conversation, contact, readState, assignee: conversation.assigneeProfileId ? profiles.get(conversation.assigneeProfileId) || null : null, messages: ((messageResponse.data || []) as Row[]).map(mapMessage), notes: ((noteResponse.data || []) as Row[]).map((row) => mapNote(row, profiles)) };
+    return { conversation, contact, readState, assignee: conversation.assigneeProfileId ? profiles.get(conversation.assigneeProfileId) || null : null, messages: ((messageResponse.data || []) as Row[]).reverse().map(mapMessage), notes: ((noteResponse.data || []) as Row[]).map((row) => mapNote(row, profiles)) };
   }
 
   async markConversationRead(organizationId: string, conversationId: string, profileId: string, lastMessageId?: string | null): Promise<ConversationReadState> {

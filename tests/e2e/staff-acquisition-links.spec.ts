@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const staff = [["meeting-imafuku", "今福"], ["meeting-shimizu", "志水"], ["meeting-uoi", "魚井"], ["meeting-nishita", "西田"]];
 
-test("four dedicated links are copyable while the existing shared links remain available", async ({ page, context }, testInfo) => {
+test("four dedicated links are copyable while the existing shared links remain available", async ({ page, context, baseURL }, testInfo) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/login");
   await page.getByLabel("メールアドレス").fill("owner@example.local");
@@ -12,13 +12,13 @@ test("four dedicated links are copyable while the existing shared links remain a
   for (const [slug, name] of staff) {
     const card = page.getByRole("article", { name: `${name}さん専用URL` });
     await expect(card.getByText(`固定担当：${name}`, { exact: true })).toBeVisible();
-    await expect(card.getByRole("link", { name: "開く", exact: true })).toHaveAttribute("href", `http://127.0.0.1:3000/add/${slug}`);
+    await expect(card.getByRole("link", { name: "開く", exact: true })).toHaveAttribute("href", `${baseURL}/add/${slug}`);
     await card.getByRole("button", { name: `${name}さん用URLをコピー` }).click();
     await expect(card.getByText("コピーしました ✓", { exact: true })).toBeVisible();
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`http://127.0.0.1:3000/add/${slug}`);
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${baseURL}/add/${slug}`);
   }
   for (const slug of ["meeting", "survey", "hp"]) {
-    await expect(page.locator(`a[href="http://127.0.0.1:3000/add/${slug}"]`)).toHaveCount(1);
+    await expect(page.locator(`a[href="${baseURL}/add/${slug}"]`)).toHaveCount(1);
   }
   await page.screenshot({ path: testInfo.outputPath("staff-links-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });

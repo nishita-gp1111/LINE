@@ -351,6 +351,17 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
       .slice(0, 50);
   }
 
+  getMessageById(organizationId: string, messageId: string): MessageRecord | null {
+    const message = this.messages.get(messageId);
+    return message?.organizationId === organizationId ? message : null;
+  }
+
+  listInboundNotifications(organizationId: string) {
+    return [...this.messages.values()].filter(message => message.organizationId === organizationId && message.direction === "inbound" && message.status === "received" && !message.deletedAt && message.conversationId)
+      .map(message => ({ id: message.id, conversationId: message.conversationId!, createdAt: message.createdAt,
+        displayName: [...this.contacts.values()].find(contact => contact.id === message.contactId)?.displayName || "お客様", messageType: message.messageType }));
+  }
+
   async getMetrics(): Promise<WebhookMetrics> {
     const events = [...this.events.values()];
     return {

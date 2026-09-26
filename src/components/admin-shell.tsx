@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { LogoutButton } from "@/components/logout-button";
+import { InboxNotifications } from "@/components/inbox-notifications";
 
 type NavItem = {
   href: string;
@@ -84,7 +85,7 @@ function Navigation({ pathname, compact = false }: { pathname: string; compact?:
   );
 }
 
-export function AdminShell({ userEmail, recipientMode, children }: { userEmail: string; recipientMode: "controlled" | "all_followers"; children: ReactNode }) {
+export function AdminShell({ userEmail, userId, recipientMode, children }: { userEmail: string; userId: string; recipientMode: "controlled" | "all_followers"; children: ReactNode }) {
   const pathname = usePathname();
   const current = [homeItem, ...sections.flatMap((section) => section.items)].find((item) => active(pathname, item.href)) || homeItem;
 
@@ -113,6 +114,7 @@ export function AdminShell({ userEmail, recipientMode, children }: { userEmail: 
           <p className="truncate text-sm font-black text-ink">{current.label}</p>
           <p className="truncate text-[11px] text-ink/45">{current.description}</p>
         </div>
+        <InboxNotifications key={userId} userKey={userId} />
         <div className="hidden min-w-0 items-center gap-3 sm:flex">
           <div className="min-w-0 text-right"><p className="truncate text-xs font-bold text-ink/70">{userEmail}</p><p className="text-[10px] text-ink/40">管理者</p></div>
           <LogoutButton />
