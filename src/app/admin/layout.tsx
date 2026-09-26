@@ -9,5 +9,5 @@ export const dynamic = "force-dynamic";
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const user = await requireAuthenticatedUser();
   await ensureInitialOrganization(user);
-  return <AdminShell userEmail={user.email || "管理者"} recipientMode={getServerEnv().LINE_RECIPIENT_MODE}>{children}</AdminShell>;
+  return <AdminShell userEmail={user.email || "管理者"} userId={user.id} recipientMode={getServerEnv().LINE_RECIPIENT_MODE}>{children}</AdminShell>;
 }

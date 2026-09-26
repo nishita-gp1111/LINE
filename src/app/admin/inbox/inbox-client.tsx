@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ContactTagsPanel } from "@/components/contact-tags-panel";
+import { ReceivedImage } from "@/components/received-image";
 import { friendStatusPresentation } from "@/lib/contacts/status";
 import { assigneeOptionValue, assigneeUpdate } from "@/lib/acquisition/assignment";
 import type {
@@ -62,6 +63,7 @@ function fileSize(value: number | null): string {
 
 function MessageBody({ message }: { message: PublicMessage }) {
   if (message.status === "deleted") return <p className="whitespace-pre-wrap text-sm leading-6">（メッセージが送信取消されました）</p>;
+  if (message.direction === "inbound" && message.messageType === "image") return <ReceivedImage key={message.id} messageId={message.id} />;
   const attachment = messageAttachment(message);
   if (attachment?.type === "image") {
     const original = `/api/inbox/attachments/${encodeURIComponent(attachment.id)}/content`;
@@ -114,6 +116,7 @@ function initials(name: string | null): string {
 }
 
 function Avatar({ name, pictureUrl, size = "md" }: { name: string | null; pictureUrl: string | null; size?: "sm" | "md" | "lg" }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const sizeClass = size === "lg" ? "size-20 text-2xl" : size === "sm" ? "size-10 text-sm" : "size-12 text-base";
   const imageSize = size === "lg" ? 80 : size === "sm" ? 40 : 48;
   return (
@@ -121,8 +124,8 @@ function Avatar({ name, pictureUrl, size = "md" }: { name: string | null; pictur
       aria-hidden="true"
       className={`grid shrink-0 place-items-center overflow-hidden rounded-full border border-emerald-100 bg-emerald-50 font-black text-emerald-700 ${sizeClass}`}
     >
-      {pictureUrl
-        ? <img src={pictureUrl} alt="" width={imageSize} height={imageSize} loading={size === "md" ? "lazy" : "eager"} decoding="async" className="size-full object-cover" />
+      {pictureUrl && pictureUrl !== failedUrl
+        ? <img src={pictureUrl} alt="" width={imageSize} height={imageSize} loading={size === "md" ? "lazy" : "eager"} decoding="async" onError={() => setFailedUrl(pictureUrl)} className="size-full object-cover" />
         : initials(name)}
     </span>
   );
@@ -156,16 +159,19 @@ export default function InboxClient(props: Props) {
 
   useEffect(() => {
     if (!selectedConversationId || !selectedLastInboundMessageId) return;
-    const key = `${selectedConversationId}:${selectedLastInboundMessageId}`;
-    if (autoReadKeyRef.current === key) return;
-    autoReadKeyRef.current = key;
-    void postAction({ action: "read", conversationId: selectedConversationId, lastMessageId: selectedLastMessageId })
-      .then((result) => {
-        if (!result.ok) autoReadKeyRef.current = null;
-      })
-      .catch(() => {
-        autoReadKeyRef.current = null;
-      });
+    function markVisibleConversationRead() {
+      if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+      const key = `${selectedConversationId}:${selectedLastInboundMessageId}`;
+      if (autoReadKeyRef.current === key) return;
+      autoReadKeyRef.current = key;
+      void postAction({ action: "read", conversationId: selectedConversationId, lastMessageId: selectedLastMessageId })
+        .then(result => { if (!result.ok) autoReadKeyRef.current = null; })
+        .catch(() => { autoReadKeyRef.current = null; });
+    }
+    markVisibleConversationRead();
+    document.addEventListener("visibilitychange", markVisibleConversationRead);
+    window.addEventListener("focus", markVisibleConversationRead);
+    return () => { document.removeEventListener("visibilitychange", markVisibleConversationRead); window.removeEventListener("focus", markVisibleConversationRead); };
   }, [selectedConversationId, selectedLastInboundMessageId, selectedLastMessageId]);
 
   function conversationHref(conversationId: string, filter = props.filter) {
@@ -269,8 +275,8 @@ export default function InboxClient(props: Props) {
   }
 
   return (
-    <div className="grid overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm xl:h-[calc(100vh-10rem)] xl:min-h-[700px] xl:grid-cols-[320px_minmax(440px,1fr)_330px]">
-      <aside className="flex min-h-[520px] flex-col border-b border-line bg-white xl:min-h-0 xl:border-b-0 xl:border-r">
+    <div className="grid overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm xl:h-[calc(100vh-10rem)] xl:min-h-[700px] xl:grid-cols-[260px_minmax(0,1fr)_260px] 2xl:grid-cols-[300px_minmax(0,1fr)_300px]">
+      <aside className="flex min-h-[520px] min-w-0 flex-col border-b border-line bg-white xl:min-h-0 xl:border-b-0 xl:border-r">
         <div className="border-b border-line p-3">
           <form className="grid gap-2" method="get">
             <div className="relative">
@@ -414,12 +420,12 @@ export default function InboxClient(props: Props) {
         )}
       </section>
 
-      <aside className="min-h-[700px] overflow-y-auto bg-white xl:min-h-0">
+      <aside className="min-h-[700px] min-w-0 overflow-y-auto bg-white xl:min-h-0">
         {selected ? (
           <>
             <section className="border-b border-line p-5 text-center">
               <div className="flex justify-center"><Avatar name={selected.contact.displayName} pictureUrl={selected.contact.pictureUrl} size="lg" /></div>
-              <h2 className="mt-3 text-lg font-black">{selected.contact.displayName || "名称未取得"}</h2>
+              <h2 className="mt-3 break-words text-lg font-black">{selected.contact.displayName || "名称未取得"}</h2>
               <p className="mt-1 text-[11px] text-ink/45">登録 {date(selected.contact.firstSeenAt)}</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button type="button" disabled={!canOperate || working || selected.readState.unreadCount === 0} onClick={() => void perform({ action: "read", conversationId: selected.conversation.id, lastMessageId: selected.messages.at(-1)?.id || null })} className="focus-ring rounded-lg border border-line px-2 py-2 text-[10px] font-black disabled:opacity-35">✓ 確認済みにする</button>
@@ -429,7 +435,7 @@ export default function InboxClient(props: Props) {
 
             <section className="border-b border-line p-4">
               <h3 className="text-xs font-black text-ink/45">対応状況</h3>
-              <div className="mt-3 grid gap-3">
+              <div className="mt-3 grid gap-3 [&_select]:min-w-0 [&_select]:w-full">
                 <label className="grid grid-cols-[72px_1fr] items-center gap-2 text-xs"><span className="font-bold text-ink/55">ステータス</span><select disabled={!canOperate || working} value={selected.conversation.status} onChange={(event) => void perform({ action: "update", conversationId: selected.conversation.id, status: event.target.value })} className="focus-ring min-h-9 rounded-lg border border-line px-2 text-xs"><option value="open">対応中</option><option value="pending">保留</option><option value="closed">完了</option></select></label>
                 <label className="grid grid-cols-[72px_1fr] items-center gap-2 text-xs"><span className="font-bold text-ink/55">担当者</span><select aria-label="担当者" disabled={!canOperate || working} value={assigneeOptionValue(selected.conversation)} onChange={(event) => void perform({ action: "update", conversationId: selected.conversation.id, ...assigneeUpdate(event.target.value) })} className="focus-ring min-h-9 rounded-lg border border-line px-2 text-xs"><option value="">未担当</option>{[...new Set([...props.staffNames, ...(selected.conversation.assigneeName ? [selected.conversation.assigneeName] : [])])].map(name => <option key={`name:${name}`} value={`name:${name}`}>{name}</option>)}{props.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.displayName}（ログイン担当）</option>)}</select></label>
                 <label className="grid grid-cols-[72px_1fr] items-center gap-2 text-xs"><span className="font-bold text-ink/55">優先度</span><select disabled={!canOperate || working} value={selected.conversation.priority} onChange={(event) => void perform({ action: "update", conversationId: selected.conversation.id, priority: event.target.value as ConversationPriority })} className="focus-ring min-h-9 rounded-lg border border-line px-2 text-xs"><option value="normal">通常</option><option value="high">高</option></select></label>

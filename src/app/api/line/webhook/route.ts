@@ -11,6 +11,7 @@ import { createSupabaseWebhookStore } from "@/lib/webhook/store-supabase";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { sendInboundEmailNotification } from "@/lib/notifications/inbound-email";
 import { SupabaseInboundEmailHistory } from "@/lib/notifications/inbound-email-supabase";
+import { getReceivedImage, removeReceivedImage } from "@/lib/inbox/received-image";
 
 export const runtime = "nodejs";
 
@@ -63,9 +64,14 @@ export async function POST(request: Request) {
         channelAccessToken: config.channelAccessToken
       }),
       minimumLaunchClient: adminClient,
-      onInboundMessage: env.INBOUND_EMAIL_NOTIFICATIONS_ENABLED && emailHistory
+      onInboundMessage: adminClient
         ? (message) => {
             after(async () => {
+              if (message.messageType === "image") {
+                try { await getReceivedImage(message.organizationId, message.messageId); }
+                catch { console.error("[received-image] archive failed; retry on authorized view"); }
+              }
+              if (!env.INBOUND_EMAIL_NOTIFICATIONS_ENABLED || !emailHistory) return;
               try {
                 const notification = await sendInboundEmailNotification({
                   message,
@@ -82,6 +88,17 @@ export async function POST(request: Request) {
           }
         : undefined
     });
+    if (adminClient) {
+      for (const event of parsed.data.events) {
+        if (event.type === "unsend" && event.unsend && event.source?.type === "user") {
+          const lineMessageId = event.unsend.messageId;
+          after(async () => {
+            try { await removeReceivedImage(config.organizationId, lineMessageId); }
+            catch { console.error("[received-image] cleanup failed"); }
+          });
+        }
+      }
+    }
     return NextResponse.json({ ok: true, events: parsed.data.events.length, ...result });
   } catch (error) {
     const status = error instanceof LineConfigurationError ? 503 : 500;
