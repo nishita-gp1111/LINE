@@ -240,13 +240,13 @@ export class SupabaseInboxStore implements InboxStore {
 
   async createQuickReply(organizationId: string, profileId: string, name: string, textContent: string, sortOrder: number): Promise<QuickReplyTemplate> {
     const { data, error } = await this.client.from("quick_reply_templates").insert({ organization_id: organizationId, name, text_content: textContent, sort_order: sortOrder, created_by_profile_id: profileId }).select("*").single();
-    if (error) throw new Error("クイック返信を作成できませんでした。");
+    if (error) throw new Error(error.code === "23505" ? "同じ名前のクイック返信が存在します。" : "クイック返信を作成できませんでした。");
     return mapQuick(data as Row);
   }
 
   async updateQuickReply(organizationId: string, id: string, name: string, textContent: string, sortOrder: number, isActive: boolean): Promise<QuickReplyTemplate> {
     const { data, error } = await this.client.from("quick_reply_templates").update({ name, text_content: textContent, sort_order: sortOrder, is_active: isActive, updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("id", id).select("*").single();
-    if (error) throw new Error("クイック返信を更新できませんでした。");
+    if (error) throw new Error(error.code === "23505" ? "同じ名前のクイック返信が存在します。" : "クイック返信を更新できませんでした。");
     return mapQuick(data as Row);
   }
 
