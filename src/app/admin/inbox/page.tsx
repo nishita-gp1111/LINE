@@ -62,7 +62,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
             <h1 className="mt-1 text-2xl font-black tracking-tight">顧客とのトーク</h1>
             <p className="mt-0.5 text-xs text-ink/50">会話・タグ・対応状況をこの画面だけで確認できます。</p>
           </div>
-          <div className="flex gap-2"><Link href="/admin/contacts" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">顧客一覧</Link><Link href="/admin/settings/quick-replies" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">クイック返信設定</Link></div>
+          <div className="flex gap-2"><Link href="/admin/contacts" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">顧客一覧</Link><Link href="/admin/settings/quick-replies" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">文章テンプレート設定</Link></div>
         </div>
         <InboxClient items={result.items} total={result.total} page={result.page} pageSize={result.pageSize} filters={filters} selected={safeDetail} quickReplies={quickReplies} profiles={profiles} staffNames={[...new Set([...FIXED_ASSIGNEE_NAMES, ...assignmentSettings.rules.flatMap(rule => rule.staffNames)])]} authProfileId={data.auth.profileId} role={data.auth.role} filter={filter} search={search} canSend={canSend} canSendMedia={canSendMedia} mockMode={env.MOCK_LINE_API} />
       </div>

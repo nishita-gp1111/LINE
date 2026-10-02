@@ -5,7 +5,20 @@ import { getInboxStore } from "@/lib/inbox/store";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+async function safely(action: () => Promise<NextResponse>) {
+  try {
+    const response = await action();
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  } catch (error) {
+    const duplicate = error instanceof Error && error.message === "同じ名前のクイック返信が存在します。";
+    return NextResponse.json({ ok: false, error: duplicate ? "同じ名前のテンプレートがあります。別の名前にしてください。" : "テンプレートの処理に失敗しました。一覧を再読み込みして確認してください。" }, { status: duplicate ? 409 : 500, headers: { "Cache-Control": "private, no-store" } });
+  }
+}
+
+export async function GET() { return safely(list); }
+
+async function list() {
   const auth = await getInboxAuthContext();
   if (!auth) return NextResponse.json({ ok: false, error: "認証が必要です。" }, { status: 401 });
   const store = getInboxStore(auth.organizationId);
@@ -14,14 +27,16 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  return mutate(request, "create");
+  return safely(() => mutate(request, "create"));
 }
 
 export async function PATCH(request: Request) {
-  return mutate(request, "update");
+  return safely(() => mutate(request, "update"));
 }
 
-export async function DELETE(request: Request) {
+export async function DELETE(request: Request) { return safely(() => remove(request)); }
+
+async function remove(request: Request) {
   const auth = await getInboxAuthContext();
   if (!auth) return NextResponse.json({ ok: false, error: "認証が必要です。" }, { status: 401 });
   if (!canAdminister(auth.role) || !isTrustedOrigin(request)) return NextResponse.json({ ok: false, error: "権限がありません。" }, { status: 403 });

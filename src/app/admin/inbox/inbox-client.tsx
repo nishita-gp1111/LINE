@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ContactTagsPanel } from "@/components/contact-tags-panel";
 import { ReceivedImage } from "@/components/received-image";
+import { InboxTextTemplates } from "@/components/inbox-text-templates";
+import { appendTextTemplate } from "@/lib/inbox/text-templates";
 import { friendStatusPresentation } from "@/lib/contacts/status";
 import { assigneeOptionValue, assigneeUpdate } from "@/lib/acquisition/assignment";
 import type {
@@ -152,6 +154,7 @@ export default function InboxClient(props: Props) {
   const blocked = selected?.contact.friendStatus === "blocked";
   const autoReadKeyRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const selectedConversationId = selected?.conversation.id || null;
   const selectedFile = selectedFileState?.conversationId === selectedConversationId ? selectedFileState.file : null;
   const selectedLastMessageId = selected?.messages.at(-1)?.id || null;
@@ -394,6 +397,8 @@ export default function InboxClient(props: Props) {
                   </div>
                 ) : null}
                 <textarea
+                  ref={composerRef}
+                  aria-label="送信するメッセージ"
                   value={text}
                   onChange={(event) => setText(event.target.value)}
                   onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); void send(); } }}
@@ -407,7 +412,13 @@ export default function InboxClient(props: Props) {
                   <div className="flex flex-wrap items-center gap-1">
                     <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,application/pdf" className="sr-only" onChange={(event) => chooseFile(event.target.files?.[0] || null)} />
                     <button type="button" title={props.canSendMedia ? "画像またはPDFを選択" : "画像・PDF送信は現在OFFです"} disabled={!canOperate || !props.canSendMedia || blocked || working} onClick={() => fileInputRef.current?.click()} className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-35">📎 画像・PDF</button>
-                    {props.quickReplies.slice(0, 4).map((item) => <button type="button" key={item.id} disabled={!canOperate || blocked || working} onClick={() => setText((current) => current ? `${current}\n${item.textContent}` : item.textContent)} className="rounded-full bg-paper px-2.5 py-1 text-[10px] font-bold hover:bg-emerald-50">＋ {item.name}</button>)}
+                    <InboxTextTemplates key={selected.conversation.id} initialItems={props.quickReplies} draft={text} canManage={props.role === "owner" || props.role === "admin"} disabled={!canOperate || !props.canSend || blocked || working} onInsert={body => {
+                      const next = appendTextTemplate(text, body);
+                      if (next === null) return false;
+                      setText(next);
+                      requestAnimationFrame(() => { composerRef.current?.focus(); composerRef.current?.setSelectionRange(next.length, next.length); });
+                      return true;
+                    }} />
                   </div>
                   <div className="flex items-center gap-3"><span className="hidden text-[9px] text-ink/35 sm:inline">⌘ / Ctrl + Enterで本文送信</span><span className="text-[9px] text-ink/35">{text.length}/5000</span><button type="button" onClick={() => void (selectedFile ? sendAttachment() : send())} disabled={!canOperate || !props.canSend || blocked || working || (selectedFile ? !props.canSendMedia : !text.trim())} className="focus-ring rounded-lg bg-emerald-600 px-5 py-2 text-xs font-black text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-35">{working ? "処理中…" : selectedFile ? "ファイルを送信" : "送信"}</button></div>
                 </div>
