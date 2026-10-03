@@ -16,8 +16,11 @@
 12. `20260714010000_minimum_internal_launch.sql`
 13. `20260714011000_minimum_internal_launch_outbound_fix.sql`
 14. `20260714012000_minimum_internal_launch_follow_survey.sql`
+15. `20260714013000_controlled_launch_recipient_bootstrap.sql`
+16. `20260716010000_line_chat_read_tokens.sql`
+17. `20260719010000_booking_management.sql`
 
-3Aは顧客データとRLS、3Bはmedia/template/campaign/job、3Cはautomation、3Dはsurvey、3Eはrich menu、3Fはtracking/analytics、3Gはlaunch状態、3Hはprivate Storage/RLSとruntime RPCを追加します。既存テーブルのbackfillは3A〜3Bに限定し、3Hは既存migrationを変更しません。
+3Aは顧客データとRLS、3Bはmedia/template/campaign/job、3Cはautomation、3Dはsurvey、3Eはrich menu、3Fはtracking/analytics、3Gはlaunch状態、3Hはprivate Storage/RLSとruntime RPCを追加します。Booking Management migrationは予約フォーム、質問、担当者、暗号化Calendar接続、予約、回答、リマインドを追加し、既存CRMテーブルの構造やデータは変更しません。
 
 想定ロックは新規table/index/policy作成と`media_assets.storage_bucket` default変更です。大規模本番ではmaintenance window、dry-run、backup後に適用してください。`pg_cron`/`pg_net`や`storage.buckets`が管理権限で利用できない環境では、先にDashboardでextensionを有効化します。
 
