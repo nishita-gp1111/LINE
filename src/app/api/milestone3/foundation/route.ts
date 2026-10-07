@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth/server";
-import { canOperate, getInboxAuthContext } from "@/lib/inbox/auth";
+import { canAdminister, canOperate, getInboxAuthContext } from "@/lib/inbox/auth";
 import { getServerEnv } from "@/lib/env/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createField, createSegment, createTag, createTagGroup, assignTag, foundationState, previewSegment, removeTagAssignment, setFieldValue, updateTag } from "@/lib/milestone3/foundation-store";
@@ -13,9 +13,10 @@ export async function GET(request: Request) {
   const resource = searchParams.get("resource") || "tags";
   const contactId = searchParams.get("contactId") || undefined;
   if (getServerEnv().MOCK_LINE_API) {
-    if (!await getAuthenticatedUser()) return json({ error: "unauthorized" }, 401);
+    const auth = await getInboxAuthContext();
+    if (!auth) return json({ error: "unauthorized" }, 401);
     const state = foundationState();
-    if (resource === "tags") return json({ groups: state.groups, tags: state.tags, assignments: state.assignments.filter((item) => !item.removedAt && (!contactId || item.contactId === contactId)) });
+    if (resource === "tags") return json({ canDelete: canAdminister(auth.role), groups: state.groups, tags: state.tags.filter(item => item.isActive), assignments: state.assignments.filter((item) => !item.removedAt && (!contactId || item.contactId === contactId)) });
     if (resource === "fields") return json({ fields: state.fields, values: state.values });
     if (resource === "segments") return json({ segments: state.segments });
     return json({ error: "unknown_resource" }, 400);
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
   if (!auth) return json({ error: "unauthorized" }, 401);
   const client = createSupabaseAdminClient();
   if (!client) return json({ error: "database_not_configured" }, 503);
-  if (resource === "tags") return json(await listLiveTags(client, auth.organizationId, contactId));
+  if (resource === "tags") return json({ ...await listLiveTags(client, auth.organizationId, contactId), canDelete: canAdminister(auth.role) });
   const table = resource === "tags" ? "tags" : resource === "fields" ? "custom_field_definitions" : resource === "segments" ? "segments" : null;
   if (!table) return json({ error: "unknown_resource" }, 400);
   const { data, error } = await client.from(table).select("*").eq("organization_id", auth.organizationId).order("created_at", { ascending: false });
