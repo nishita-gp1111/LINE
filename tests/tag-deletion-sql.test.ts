@@ -63,6 +63,12 @@ describe("transactional tag deletion", () => {
     await db.query("insert into campaigns(organization_id,description) values ($1,$2)", [org, `AND:${tag}`]);
     expect((await check()).blockers).toEqual([{ key: "campaigns", count: 1 }]);
   });
+  it("protects equivalent upper-case UUIDs in stored JSON", async () => {
+    await db.query("insert into survey_options(organization_id,config_json) values ($1,$2)", [org, { tagId: tag.toUpperCase() }]);
+    expect((await check()).status).toBe("in_use");
+    await db.exec("truncate survey_options"); await check(true);
+    await expect(db.query("insert into survey_options(organization_id,config_json) values ($1,$2)", [org, { tagId: tag.toUpperCase() }])).rejects.toThrow("Archived tag");
+  });
   it("ignores completed campaign history but rejects a subsequent resume", async () => {
     await db.query("insert into campaigns(organization_id,description,status) values ($1,$2,'completed')", [org, `TAG_FILTER_V1:${JSON.stringify({ excludeTagIds: [tag] })}`]);
     expect((await check(true)).status).toBe("deleted");

@@ -46,8 +46,8 @@ begin
     ('funnel_steps', 'analytics'), ('campaigns', 'campaigns')
   ) as dependencies(table_name, category) loop
     execute format('select count(*)::integer from public.%I r where r.organization_id = $1
-      and (jsonb_path_exists(to_jsonb(r), ''$.** ? (@ == $id)'', jsonb_build_object(''id'', $2::text))
-        or ($3 = ''campaigns'' and position($2::text in coalesce(to_jsonb(r)->>''description'', '''')) > 0))
+      and (jsonb_path_exists(lower(to_jsonb(r)::text)::jsonb, ''$.** ? (@ == $id)'', jsonb_build_object(''id'', $2::text))
+        or ($3 = ''campaigns'' and position($2::text in lower(coalesce(to_jsonb(r)->>''description'', ''''))) > 0))
       and ($3 <> ''campaigns'' or coalesce(to_jsonb(r)->>''status'', '''') not in (''completed'', ''cancelled''))', dependency.table_name)
       into usage_count using target_organization_id, target_tag_id, dependency.table_name;
     if usage_count > 0 then
@@ -97,8 +97,8 @@ begin
   if tg_table_name = 'campaigns' and payload->>'status' in ('completed', 'cancelled') then return new; end if;
   for referenced_tag in select id, is_active from public.tags t
     where t.organization_id = new.organization_id
-      and (jsonb_path_exists(payload, '$.** ? (@ == $id)', jsonb_build_object('id', t.id::text))
-        or (tg_table_name = 'campaigns' and position(t.id::text in coalesce(payload->>'description', '')) > 0))
+      and (jsonb_path_exists(lower(payload::text)::jsonb, '$.** ? (@ == $id)', jsonb_build_object('id', t.id::text))
+        or (tg_table_name = 'campaigns' and position(t.id::text in lower(coalesce(payload->>'description', ''))) > 0))
     order by id for share
   loop
     if not referenced_tag.is_active then
