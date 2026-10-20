@@ -31,6 +31,8 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const data = await getInboxData();
   if (!data) return <main className="p-8">認証が必要です。</main>;
   if (!data.store) return <main className="p-8">Supabase設定が不足しています。</main>;
+  // Read the baseline before page data so a change during rendering is not lost.
+  const syncRevision = await data.store.getSyncRevision(data.auth.organizationId, data.auth.profileId).catch(() => null);
   const params = await searchParams;
   const filter = parseFilter(one(params.filter));
   const search = one(params.q) || "";
@@ -64,7 +66,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
           </div>
           <div className="flex gap-2"><Link href="/admin/contacts" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">顧客一覧</Link><Link href="/admin/settings/quick-replies" className="rounded-lg border border-line bg-white px-3 py-2 text-xs font-black hover:bg-paper">文章テンプレート設定</Link></div>
         </div>
-        <InboxClient items={result.items} total={result.total} page={result.page} pageSize={result.pageSize} filters={filters} selected={safeDetail} quickReplies={quickReplies} profiles={profiles} staffNames={[...new Set([...FIXED_ASSIGNEE_NAMES, ...assignmentSettings.rules.flatMap(rule => rule.staffNames)])]} authProfileId={data.auth.profileId} role={data.auth.role} filter={filter} search={search} canSend={canSend} canSendMedia={canSendMedia} mockMode={env.MOCK_LINE_API} />
+        <InboxClient syncRevision={syncRevision} items={result.items} total={result.total} page={result.page} pageSize={result.pageSize} filters={filters} selected={safeDetail} quickReplies={quickReplies} profiles={profiles} staffNames={[...new Set([...FIXED_ASSIGNEE_NAMES, ...assignmentSettings.rules.flatMap(rule => rule.staffNames)])]} authProfileId={data.auth.profileId} role={data.auth.role} filter={filter} search={search} canSend={canSend} canSendMedia={canSendMedia} mockMode={env.MOCK_LINE_API} />
       </div>
     </main>
   );
