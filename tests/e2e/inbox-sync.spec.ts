@@ -84,6 +84,7 @@ test("idle checks are lightweight, failures recover, and returning to a tab catc
   const id = randomUUID(); const user = `Ureconnect-${id}`; const initial = `再接続確認 ${id}`;
   await inbound(request, user, initial);
   await page.goto("/admin/inbox");
+  await expect(page).toHaveURL(/conversation=/);
   await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約5秒ごと）");
   let refreshes = 0; let syncs = 0; let fail = false;
   page.on("request", req => { if (req.headers().rsc === "1" && !req.headers()["next-router-prefetch"]) refreshes++; });
@@ -111,4 +112,27 @@ test("idle checks are lightweight, failures recover, and returning to a tab catc
   await page.unroute("**/api/inbox/sync");
   await page.getByRole("button", { name: "今すぐ更新", exact: true }).click();
   await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約5秒ごと）", { timeout: 10_000 });
+});
+
+test("a new customer's arrival cannot switch the open conversation or its unsent draft", async ({ page, request }) => {
+  await simulatedWindow(page); await login(page);
+  const id = randomUUID(); const first = `選択を固定 ${id}`;
+  await inbound(request, `Upinned-${id}`, first);
+  await page.goto("/admin/inbox");
+  await expect(page).toHaveURL(/conversation=/);
+  const originalConversation = new URL(page.url()).searchParams.get("conversation");
+  await page.getByLabel("送信するメッセージ").fill("この方への未送信の下書き");
+  await inbound(request, `Unew-${id}`, `別のお客様の新着 ${id}`);
+  await expect(page.getByRole("link").filter({ hasText: `別のお客様の新着 ${id}` })).toBeVisible({ timeout: 15_000 });
+  expect(new URL(page.url()).searchParams.get("conversation")).toBe(originalConversation);
+  await expect(page.locator("article").filter({ hasText: first })).toBeVisible();
+  await expect(page.locator("article").filter({ hasText: `別のお客様の新着 ${id}` })).toHaveCount(0);
+  await expect(page.getByLabel("送信するメッセージ")).toHaveValue("この方への未送信の下書き");
+  // A new search omits conversation from the form. Pin again even when the
+  // selected contact is the same, without dropping the search parameters.
+  await page.getByPlaceholder("名前・メッセージ・メモを検索").fill(first);
+  await page.getByRole("button", { name: "絞り込む", exact: true }).click();
+  await expect(page).toHaveURL(/conversation=/);
+  expect(new URL(page.url()).searchParams.get("q")).toBe(first);
+  expect(new URL(page.url()).searchParams.get("conversation")).toBe(originalConversation);
 });

@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ContactTagsPanel } from "@/components/contact-tags-panel";
 import { ReceivedImage } from "@/components/received-image";
@@ -146,6 +146,7 @@ async function postAction(payload: Record<string, unknown>): Promise<{ ok: boole
 
 export default function InboxClient(props: Props) {
   const router = useRouter();
+  const queryString = useSearchParams().toString();
   const [text, setText] = useState("");
   const [note, setNote] = useState("");
   const [selectedFileState, setSelectedFileState] = useState<{ conversationId: string; file: File } | null>(null);
@@ -161,6 +162,15 @@ export default function InboxClient(props: Props) {
   const selectedFile = selectedFileState?.conversationId === selectedConversationId ? selectedFileState.file : null;
   const selectedLastMessageId = selected?.messages.at(-1)?.id || null;
   const selectedLastInboundMessageId = [...(selected?.messages || [])].reverse().find((message) => message.direction === "inbound")?.id || null;
+
+  useEffect(() => {
+    // The default selection is the first row. Pin it before a new arrival can
+    // reorder that list, otherwise an unsent draft could appear for someone else.
+    const params = new URLSearchParams(queryString);
+    if (!selectedConversationId || params.get("conversation")) return;
+    params.set("conversation", selectedConversationId);
+    router.replace(`/admin/inbox?${params.toString()}`, { scroll: false });
+  }, [queryString, router, selectedConversationId]);
 
   useEffect(() => {
     if (!selectedConversationId || !selectedLastInboundMessageId) return;
