@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { inboxRevision } from "@/lib/inbox/sync-revision";
 import type {
   ConversationDetail,
   ConversationListItem,
@@ -354,6 +355,18 @@ export class MockWebhookStore implements WebhookStore, InboxStore {
   getMessageById(organizationId: string, messageId: string): MessageRecord | null {
     const message = this.messages.get(messageId);
     return message?.organizationId === organizationId ? message : null;
+  }
+
+  async getSyncRevision(organizationId: string, profileId: string): Promise<string> {
+    const latest = (rows: Array<{ organizationId: string; id: string; updatedAt: string }>) => rows
+      .filter(row => row.organizationId === organizationId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
+      .slice(0, 1).map(row => ({ id: row.id, updated_at: row.updatedAt }));
+    return inboxRevision(organizationId, profileId, [
+      latest([...this.messages.values()]), latest([...this.conversations.values()]),
+      latest([...this.contacts.values()]), latest([...this.notes.values()]),
+      latest([...this.readStates.values()].filter(row => row.profileId === profileId))
+    ]);
   }
 
   listInboundNotifications(organizationId: string) {

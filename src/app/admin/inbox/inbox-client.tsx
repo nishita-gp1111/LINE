@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { ContactTagsPanel } from "@/components/contact-tags-panel";
 import { ReceivedImage } from "@/components/received-image";
 import { InboxTextTemplates } from "@/components/inbox-text-templates";
+import { InboxSync } from "@/components/inbox-sync";
 import { appendTextTemplate } from "@/lib/inbox/text-templates";
 import { friendStatusPresentation } from "@/lib/contacts/status";
 import { assigneeOptionValue, assigneeUpdate } from "@/lib/acquisition/assignment";
@@ -24,6 +25,7 @@ import type {
 import type { PublicMessage } from "@/lib/inbox/public";
 
 type Props = {
+  syncRevision: string | null;
   items: ConversationListItem[];
   total: number;
   page: number;
@@ -305,6 +307,7 @@ export default function InboxClient(props: Props) {
             ))}
           </div>
           <div className="mt-3 flex items-center justify-between text-[11px]"><span className="font-black text-ink/65">{props.total}件のトーク</span><span className="text-ink/35">最新順</span></div>
+          <InboxSync revision={props.syncRevision} userKey={props.authProfileId} />
         </div>
 
         <div className="flex-1 overflow-y-auto">

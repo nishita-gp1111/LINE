@@ -149,6 +149,7 @@ export type OutboundSendUpdate = {
 };
 
 export type InboxStore = {
+  getSyncRevision(organizationId: string, profileId: string): Promise<string>;
   listConversations(query: ConversationListQuery): Promise<{ items: ConversationListItem[]; total: number; page: number; pageSize: number }>;
   getConversation(organizationId: string, conversationId: string, profileId: string): Promise<ConversationDetail | null>;
   markConversationRead(organizationId: string, conversationId: string, profileId: string, lastMessageId?: string | null): Promise<ConversationReadState>;

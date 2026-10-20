@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { inboxRevision } from "@/lib/inbox/sync-revision";
 import { evaluateControlledRecipient } from "@/lib/launch/controlled-recipient";
 import type { ContactRecord, MessageRecord } from "@/lib/webhook/store";
 import type { ConversationDetail, ConversationListItem, ConversationListQuery, ConversationNote, ConversationReadState, ConversationRecord, ConversationUpdate, InboxRole, InboxStore, MessageAttachmentRecord, OutboundCreateInput, OutboundSendUpdate, ProfileSummary, QuickReplyTemplate } from "@/lib/inbox/types";
@@ -83,6 +84,17 @@ export class SupabaseInboxStore implements InboxStore {
   private async readState(conversationId: string, profileId: string): Promise<ConversationReadState> {
     const { data } = await this.client.from("conversation_read_states").select("*").eq("organization_id", this.organizationId).eq("conversation_id", conversationId).eq("profile_id", profileId).maybeSingle();
     return mapReadState((data || {}) as Row, this.organizationId, conversationId, profileId);
+  }
+
+  async getSyncRevision(organizationId: string, profileId: string): Promise<string> {
+    // Poll metadata only. Do not reload full conversations/messages on idle tabs.
+    const results = await Promise.all(["messages", "conversations", "contacts", "conversation_notes", "conversation_read_states"].map(table => {
+      let query = this.client.from(table).select("id, updated_at").eq("organization_id", organizationId);
+      if (table === "conversation_read_states") query = query.eq("profile_id", profileId);
+      return query.order("updated_at", { ascending: false }).order("id", { ascending: false }).limit(1);
+    }));
+    if (results.some(result => result.error)) throw new Error("同期情報を取得できませんでした。");
+    return inboxRevision(organizationId, profileId, results.map(result => result.data || []));
   }
 
   async listConversations(query: ConversationListQuery): Promise<{ items: ConversationListItem[]; total: number; page: number; pageSize: number }> {

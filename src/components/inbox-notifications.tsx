@@ -1,14 +1,11 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { notificationText, type InboxNotification, type InboxNotificationFeed } from "@/lib/notifications/inbox-feed";
 
 export function InboxNotifications({ userKey }: { userKey: string }) {
   const router = useRouter();
-  const pathname = usePathname();
-  const pathnameRef = useRef(pathname);
-  useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<InboxNotification[]>([]);
   const [unseen, setUnseen] = useState(0);
@@ -104,7 +101,7 @@ export function InboxNotifications({ userKey }: { userKey: string }) {
           setUnseen(count => count + fresh.length);
           setToast(fresh.at(-1)!);
           for (const item of fresh) void notify(item, result.scope);
-          if (pathnameRef.current === "/admin/inbox") router.refresh();
+          // Conversation synchronization is independent of inbound-only alerts.
         }
         if (result.hasMore) delay = 250;
       } catch { if (!stopped) { setConnection("接続を再確認中…"); delay = 15_000; } }
