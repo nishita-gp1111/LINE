@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
+import { INBOX_POLL_INTERVAL_MS, INBOX_RECONCILE_INTERVAL_MS, INBOX_SYNC_LABEL } from "@/lib/inbox/polling";
 
 export function InboxSync({ revision, userKey }: { revision: string | null; userKey: string }) {
   const router = useRouter();
@@ -12,7 +13,10 @@ export function InboxSync({ revision, userKey }: { revision: string | null; user
   const refreshing = useRef(false);
   const retry = useRef<() => void>(() => {});
   useEffect(() => { renderedRevision.current = revision; }, [revision]);
-  useEffect(() => { refreshing.current = pending; }, [pending]);
+  useEffect(() => {
+    if (!pending && refreshing.current) setStatus(INBOX_SYNC_LABEL);
+    refreshing.current = pending;
+  }, [pending]);
 
   useEffect(() => {
     let stopped = false;
@@ -32,27 +36,27 @@ export function InboxSync({ revision, userKey }: { revision: string | null; user
       if (refreshing.current && Date.now() - lastRefresh < 15_000) { schedule(1_000); return; }
       clearTimeout(timer);
       active = true;
-      let delay = 5_000;
+      const delay = INBOX_POLL_INTERVAL_MS;
       try {
         const response = await fetch("/api/inbox/sync", { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]) });
         if (stopped) return;
         // An auth service interruption can also return 401. Keep retrying slowly
         // so an otherwise valid session does not require a browser reload.
-        if (response.status === 401) { setStatus("ログイン状態を再確認中"); delay = 30_000; return; }
+        if (response.status === 401) { setStatus("ログイン状態を再確認中"); return; }
         if (!response.ok) throw new Error("sync_failed");
         const result = await response.json() as { revision?: unknown };
         if (typeof result.revision !== "string" || !/^[a-f0-9]{64}$/.test(result.revision)) throw new Error("invalid_revision");
         if (stopped || document.visibilityState !== "visible") return;
         // Acknowledge changes only when refreshed server props reach this browser.
         // Periodic reconciliation also catches late commits / equal timestamps.
-        if (force || result.revision !== renderedRevision.current || Date.now() - lastRefresh >= 60_000) {
+        if (force || result.revision !== renderedRevision.current || Date.now() - lastRefresh >= INBOX_RECONCILE_INTERVAL_MS) {
           lastRefresh = Date.now();
           refreshing.current = true;
           setStatus("トークを更新中");
           startTransition(() => router.refresh());
-        } else setStatus("自動更新中（約5秒ごと）");
+        } else setStatus(INBOX_SYNC_LABEL);
       } catch {
-        if (!stopped) { setStatus("通信を再確認中・自動で再接続します"); delay = 10_000; }
+        if (!stopped) setStatus("通信を再確認中・自動で再接続します");
       } finally {
         active = false;
         if (wakeAgain && !stopped) { wakeAgain = false; void poll(true); }

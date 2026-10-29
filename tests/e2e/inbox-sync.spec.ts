@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { createHmac, randomUUID } from "node:crypto";
+import { advancePoll } from "./helpers/poll-clock";
 
 test.use({ actionTimeout: 10_000 });
 
@@ -16,6 +17,7 @@ async function inbound(request: APIRequestContext, userId: string, text: string)
 }
 
 async function simulatedWindow(page: Page) {
+  await page.clock.install();
   await page.addInitScript(() => {
     // Two independently logged-in, visible windows, as on two different PCs.
     // Keep focus false to ensure background synchronization never marks a chat read.
@@ -39,7 +41,7 @@ test("another operator's reply and notes sync without a reload and preserve draf
     const href = await page.getByRole("link").filter({ hasText: initial }).getAttribute("href");
     expect(href).toBeTruthy();
     await page.goto(href!); await second.goto(href!);
-    await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約5秒ごと）");
+    await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約1分ごと）");
     const draft = page.getByLabel("送信するメッセージ");
     await draft.fill("入力中の文章は残してください");
     const noteDraft = page.getByPlaceholder("対応内容などをメモ");
@@ -56,14 +58,21 @@ test("another operator's reply and notes sync without a reload and preserve draf
     await second.getByLabel("送信するメッセージ").fill(reply);
     await second.getByRole("button", { name: "送信", exact: true }).click();
     await expect(second.locator("article").filter({ hasText: reply })).toContainText("LINE受付済み");
+    await advancePoll(page);
     await expect(page.locator("article").filter({ hasText: reply })).toContainText("LINE受付済み", { timeout: 15_000 });
     const replySyncMs = Date.now() - started;
     await second.getByPlaceholder("対応内容などをメモ").fill("別ブラウザーで保存したメモ");
     await second.getByRole("button", { name: "メモを追加", exact: true }).click();
+    await expect(second.getByText("別ブラウザーで保存したメモ", { exact: true })).toBeVisible();
+    await advancePoll(page);
     await expect(page.getByText("別ブラウザーで保存したメモ", { exact: true })).toBeVisible({ timeout: 15_000 });
+    const statusSaved = second.waitForResponse(result => result.url().endsWith("/api/inbox/action") && result.request().postDataJSON()?.action === "update");
     await second.getByLabel("ステータス").selectOption("pending");
+    expect((await statusSaved).ok()).toBe(true);
+    await advancePoll(page);
     await expect(page.getByLabel("ステータス")).toHaveValue("pending", { timeout: 15_000 });
     await inbound(request, user, "新着も自動で反映されます");
+    await advancePoll(page);
     await expect(page.locator("article").filter({ hasText: "新着も自動で反映されます" })).toBeVisible({ timeout: 15_000 });
     await expect(draft).toHaveValue("入力中の文章は残してください");
     await expect(noteDraft).toHaveValue("入力途中の内部メモ");
@@ -85,19 +94,28 @@ test("idle checks are lightweight, failures recover, and returning to a tab catc
   await inbound(request, user, initial);
   await page.goto("/admin/inbox");
   await expect(page).toHaveURL(/conversation=/);
-  await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約5秒ごと）");
+  await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約1分ごと）");
   let refreshes = 0; let syncs = 0; let fail = false;
   page.on("request", req => { if (req.headers().rsc === "1" && !req.headers()["next-router-prefetch"]) refreshes++; });
   await page.route("**/api/inbox/sync", route => { syncs++; return fail ? route.fulfill({ status: 503, body: "{}" }) : route.continue(); });
-  await expect.poll(() => syncs, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+  await page.clock.fastForward(59_000);
+  expect(syncs).toBe(0);
+  await advancePoll(page, "/api/inbox/sync", 1_000);
+  await advancePoll(page);
+  expect(syncs).toBe(2);
   expect(refreshes).toBe(0);
   fail = true;
+  await advancePoll(page);
   await expect(page.getByRole("status", { name: "トーク同期状態" })).toContainText("自動で再接続", { timeout: 10_000 });
   await inbound(request, user, "通信障害中の新着");
   fail = false;
+  await advancePoll(page);
   await expect(page.locator("article").filter({ hasText: "通信障害中の新着" })).toBeVisible({ timeout: 20_000 });
   await page.evaluate(() => { (window as unknown as { __inboxVisible: boolean }).__inboxVisible = false; document.dispatchEvent(new Event("visibilitychange")); });
   await inbound(request, user, "タブに戻ったときの新着");
+  const beforeHidden = syncs;
+  await page.clock.fastForward(300_000);
+  expect(syncs).toBe(beforeHidden);
   await expect(page.locator("article").filter({ hasText: "タブに戻ったときの新着" })).toHaveCount(0);
   await page.evaluate(() => { (window as unknown as { __inboxVisible: boolean }).__inboxVisible = true; document.dispatchEvent(new Event("visibilitychange")); window.dispatchEvent(new Event("focus")); window.dispatchEvent(new Event("online")); });
   await expect(page.locator("article").filter({ hasText: "タブに戻ったときの新着" })).toBeVisible({ timeout: 5_000 });
@@ -111,7 +129,7 @@ test("idle checks are lightweight, failures recover, and returning to a tab catc
   await expect(page.getByRole("link", { name: "再ログイン", exact: true })).toHaveAttribute("href", "/login");
   await page.unroute("**/api/inbox/sync");
   await page.getByRole("button", { name: "今すぐ更新", exact: true }).click();
-  await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約5秒ごと）", { timeout: 10_000 });
+  await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約1分ごと）", { timeout: 10_000 });
 });
 
 test("a new customer's arrival cannot switch the open conversation or its unsent draft", async ({ page, request }) => {
@@ -120,9 +138,11 @@ test("a new customer's arrival cannot switch the open conversation or its unsent
   await inbound(request, `Upinned-${id}`, first);
   await page.goto("/admin/inbox");
   await expect(page).toHaveURL(/conversation=/);
+  await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約1分ごと）");
   const originalConversation = new URL(page.url()).searchParams.get("conversation");
   await page.getByLabel("送信するメッセージ").fill("この方への未送信の下書き");
   await inbound(request, `Unew-${id}`, `別のお客様の新着 ${id}`);
+  await advancePoll(page);
   await expect(page.getByRole("link").filter({ hasText: `別のお客様の新着 ${id}` })).toBeVisible({ timeout: 15_000 });
   expect(new URL(page.url()).searchParams.get("conversation")).toBe(originalConversation);
   await expect(page.locator("article").filter({ hasText: first })).toBeVisible();
@@ -135,4 +155,21 @@ test("a new customer's arrival cannot switch the open conversation or its unsent
   await expect(page).toHaveURL(/conversation=/);
   expect(new URL(page.url()).searchParams.get("q")).toBe(first);
   expect(new URL(page.url()).searchParams.get("conversation")).toBe(originalConversation);
+});
+
+test("unchanged inboxes reconcile only every five minutes", async ({ page }) => {
+  await simulatedWindow(page); await login(page);
+  // No selected customer, so this measures idle synchronization without read actions.
+  await page.goto("/admin/inbox?q=__no_contact_for_usage_test__");
+  await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約1分ごと）");
+  let refreshes = 0;
+  page.on("request", req => { if (req.headers().rsc === "1" && !req.headers()["next-router-prefetch"]) refreshes++; });
+  for (let minute = 0; minute < 4; minute++) {
+    await advancePoll(page);
+    await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約1分ごと）");
+    expect(refreshes).toBe(0);
+  }
+  await advancePoll(page);
+  await expect.poll(() => refreshes).toBe(1);
+  await expect(page.getByRole("status", { name: "トーク同期状態" })).toHaveText("自動更新中（約1分ごと）");
 });
