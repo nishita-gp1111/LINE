@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { notificationText, type InboxNotification, type InboxNotificationFeed } from "@/lib/notifications/inbox-feed";
+import { notificationPollInterval } from "@/lib/inbox/polling";
 
 export function InboxNotifications({ userKey }: { userKey: string }) {
   const router = useRouter();
@@ -82,7 +83,7 @@ export function InboxNotifications({ userKey }: { userKey: string }) {
       if (stopped || active) return;
       clearTimeout(timer);
       active = true;
-      let delay = 8_000;
+      let delay = notificationPollInterval(document.visibilityState === "visible");
       try {
         const response = await fetch(`/api/inbox/notifications${cursor ? `?after=${encodeURIComponent(cursor)}` : ""}`, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]) });
         if (response.status === 401) { stopped = true; setItems([]); setUnseen(0); setToast(null); desktop.forEach(item => item.close()); setConnection("再ログインが必要です"); return; }
@@ -92,7 +93,7 @@ export function InboxNotifications({ userKey }: { userKey: string }) {
         if (scope && result.scope !== scope) { cursor = ""; scope = result.scope; seen.clear(); setItems([]); setUnseen(0); setToast(null); delay = 250; return; }
         scope = result.scope;
         cursor = result.cursor;
-        setConnection("新着通知を受信中");
+        setConnection("新着通知を受信中（表示中は約1分ごと）");
         const fresh = result.items.filter(item => !seen.has(item.id));
         fresh.forEach(item => seen.add(item.id));
         if (seen.size > 500) { const keep = [...seen].slice(-200); seen.clear(); keep.forEach(id => seen.add(id)); }
@@ -104,10 +105,22 @@ export function InboxNotifications({ userKey }: { userKey: string }) {
           // Conversation synchronization is independent of inbound-only alerts.
         }
         if (result.hasMore) delay = 250;
-      } catch { if (!stopped) { setConnection("接続を再確認中…"); delay = 15_000; } }
-      finally { active = false; if (!stopped) timer = setTimeout(() => void poll(), delay); }
+      } catch { if (!stopped) { setConnection("接続を再確認中…"); delay = notificationPollInterval(document.visibilityState === "visible"); } }
+      finally {
+        active = false;
+        // Visibility can change while the request is in flight. Keep rapid
+        // pagination only for a known backlog, never for an idle/error poll.
+        const nextDelay = delay < 60_000 ? delay : notificationPollInterval(document.visibilityState === "visible");
+        if (!stopped) timer = setTimeout(() => void poll(), nextDelay);
+      }
     }
-    const wake = () => { if (document.visibilityState === "visible") void poll(); };
+    const wake = () => {
+      if (document.visibilityState === "visible") void poll();
+      else if (!stopped && !active) {
+        clearTimeout(timer);
+        timer = setTimeout(() => void poll(), notificationPollInterval(false));
+      }
+    };
     void poll();
     window.addEventListener("online", wake);
     document.addEventListener("visibilitychange", wake);
@@ -130,7 +143,7 @@ export function InboxNotifications({ userKey }: { userKey: string }) {
     </button>
     {open ? <section id="inbox-notification-panel" aria-label="新着LINE通知" className="fixed right-3 top-[70px] z-50 w-[360px] max-w-[calc(100vw-24px)] overflow-hidden rounded-2xl border border-line bg-white shadow-xl sm:absolute sm:right-0 sm:top-12">
       <div className="border-b border-line p-4"><h2 className="text-sm font-black">新着LINE通知</h2><p role="status" className="mt-1 text-xs text-ink/50">{connection}</p>
-        <p className="mt-3 text-xs leading-5 text-ink/65">管理画面を開いている間、すべてのお客様からの新着をお知らせします。</p>
+        <p className="mt-3 text-xs leading-5 text-ink/65">管理画面を開いている間、すべてのお客様からの新着をお知らせします。表示中は約1分、別タブに移動中は約5分ごとに確認します。</p>
         {permission === "unsupported" ? <p className="mt-2 text-xs text-ink/55">この端末では画面内通知をご利用ください。</p> : <button type="button" disabled={permission === "denied"} onClick={() => void toggleDesktop()} className="focus-ring mt-3 w-full rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-300">{enabled ? "デスクトップ通知をOFFにする" : "デスクトップ通知をONにする"}</button>}
         {permission === "denied" ? <p className="mt-2 text-xs text-ink/55">ブラウザのサイト設定で通知を許可すると、デスクトップ通知を使えます。画面内通知は有効です。</p> : null}
         <p className="mt-2 text-[10px] leading-4 text-ink/45">通知許可は端末ごとに必要です。画面を閉じている間や端末のスリープ中は通知されません。</p>

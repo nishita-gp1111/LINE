@@ -1,6 +1,7 @@
 import { expect, test, type Page, type APIRequestContext } from "@playwright/test";
 import { createHmac, randomUUID } from "node:crypto";
 import sharp from "sharp";
+import { advancePoll } from "./helpers/poll-clock";
 
 async function login(page: Page) {
   await page.goto("/login"); await page.getByLabel("メールアドレス").fill("owner@example.local");
@@ -34,8 +35,10 @@ test("received photos preview, expand, error/retry, and mobile layout", async ({
 });
 
 test("new LINE notifies on another admin page, desktop opt-in, deduplication and click-through", async ({ page, request, context }, testInfo) => {
+  await page.clock.install();
   // Mock the OS surface only. Notification polling, auth and webhook storage are real mock-mode routes.
   await context.addInitScript(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
     const calls: Array<{ title: string; body: string }> = [];
     Object.assign(window, { __notifications: calls });
     class TestNotification {
@@ -55,11 +58,14 @@ test("new LINE notifies on another admin page, desktop opt-in, deduplication and
   await expect(page.getByRole("button", { name: "デスクトップ通知をOFFにする" })).toBeVisible();
   await page.getByRole("button", { name: "新着通知", exact: true }).click();
   const otherTab = await context.newPage();
+  await otherTab.clock.install();
   await otherTab.goto("/admin");
   await otherTab.getByRole("button", { name: "新着通知", exact: true }).click();
   await expect(otherTab.getByRole("region", { name: "新着LINE通知" })).toContainText("新着通知を受信中");
   await otherTab.getByRole("button", { name: "デスクトップ通知をONにする" }).click();
   await inbound(request, "text", "Unotify-e2e-9002", "通知から開いたトークです");
+  await advancePoll(page, "/api/inbox/notifications");
+  await advancePoll(otherTab, "/api/inbox/notifications");
   await expect(page.getByRole("button", { name: "新着通知 1件", exact: true })).toBeVisible({ timeout: 20_000 });
   await expect(otherTab.getByRole("button", { name: "新着通知 1件", exact: true })).toBeVisible({ timeout: 20_000 });
   const count = (target: Page) => target.evaluate(() => (window as unknown as { __notifications: unknown[] }).__notifications.length);
@@ -79,11 +85,13 @@ test("new LINE notifies on another admin page, desktop opt-in, deduplication and
   await page.setViewportSize({ width: 1440, height: 1000 });
   const input = page.getByPlaceholder(/さんへメッセージを入力/); await input.fill("未送信の下書き");
   await inbound(request, "text", "Unotify-e2e-9002", "トークが自動更新されました");
+  await advancePoll(page);
   await expect(page.getByText("トークが自動更新されました", { exact: true }).last()).toBeVisible({ timeout: 20_000 });
   await expect(input).toHaveValue("未送信の下書き");
 });
 
 test("notification denial keeps in-app alerts; background conversations are not marked read", async ({ page, request }) => {
+  await page.clock.install();
   await page.addInitScript(() => {
     Object.defineProperty(document, "hasFocus", { configurable: true, value: () => false });
     Object.defineProperty(window, "Notification", { value: class {
@@ -98,6 +106,7 @@ test("notification denial keeps in-app alerts; background conversations are not 
   await expect(panel.getByRole("button", { name: "デスクトップ通知をONにする" })).toBeDisabled();
   await expect(panel).toContainText("画面内通知は有効です");
   await inbound(request, "text", "Udenied-e2e-9003", "画面内の通知だけでも届きます");
+  await advancePoll(page, "/api/inbox/notifications");
   await expect(panel.getByRole("link")).toHaveCount(1, { timeout: 20_000 });
   const readRequests: unknown[] = [];
   page.on("request", req => { if (req.url().endsWith("/api/inbox/action") && req.method() === "POST" && req.postDataJSON().action === "read") readRequests.push(req.postDataJSON()); });
@@ -111,4 +120,37 @@ test("notification denial keeps in-app alerts; background conversations are not 
   await expect(page).toHaveURL(/\/login$/);
   expect((await page.request.get("/api/inbox/notifications")).status()).toBe(401);
   expect((await page.request.get("/api/inbox/messages/00000000-0000-4000-8000-000000000001/image")).status()).toBe(401);
+});
+
+test("notifications use a one-minute budget, slower hidden checks, and no rapid error retry", async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    Object.assign(window, { __notifyVisible: true });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (window as unknown as { __notifyVisible: boolean }).__notifyVisible ? "visible" : "hidden" });
+  });
+  let calls = 0; let fail = false;
+  await page.route("**/api/inbox/notifications*", route => {
+    calls++;
+    return route.fulfill({ status: fail ? 503 : 200, contentType: "application/json", body: JSON.stringify({ items: [], cursor: "", scope: "test", hasMore: false }) });
+  });
+  await login(page);
+  await page.getByRole("button", { name: "新着通知", exact: true }).click();
+  const panel = page.getByRole("region", { name: "新着LINE通知" });
+  await expect(panel).toContainText("新着通知を受信中");
+  expect(calls).toBe(1);
+  await page.clock.fastForward(59_000); expect(calls).toBe(1);
+  await advancePoll(page, "/api/inbox/notifications", 1_000); expect(calls).toBe(2);
+  fail = true;
+  await advancePoll(page, "/api/inbox/notifications");
+  await expect(panel).toContainText("接続を再確認中");
+  await page.clock.fastForward(59_000); expect(calls).toBe(3);
+  fail = false;
+  await advancePoll(page, "/api/inbox/notifications", 1_000);
+  await expect(panel).toContainText("新着通知を受信中");
+  await page.evaluate(() => { (window as unknown as { __notifyVisible: boolean }).__notifyVisible = false; document.dispatchEvent(new Event("visibilitychange")); });
+  const hiddenCalls = calls;
+  await page.clock.fastForward(299_000); expect(calls).toBe(hiddenCalls);
+  await advancePoll(page, "/api/inbox/notifications", 1_000); expect(calls).toBe(hiddenCalls + 1);
+  await page.evaluate(() => { (window as unknown as { __notifyVisible: boolean }).__notifyVisible = true; document.dispatchEvent(new Event("visibilitychange")); });
+  await expect.poll(() => calls).toBe(hiddenCalls + 2);
 });
