@@ -382,10 +382,12 @@ export default function InboxClient(props: Props) {
               </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-              <div className="mx-auto grid max-w-3xl gap-3">
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+              {/* A zero-minimum grid track and wrapping keep long URLs from
+                  expanding the column and pushing right-aligned replies offscreen. */}
+              <div className="mx-auto grid w-full min-w-0 max-w-3xl grid-cols-1 gap-3">
                 {selected.messages.map((message) => (
-                  <article key={message.id} className={`max-w-[86%] rounded-2xl px-4 py-3 shadow-sm ${message.direction === "outbound" ? "ml-auto rounded-br-md bg-[#cfeee0]" : "rounded-bl-md bg-white"}`}>
+                  <article key={message.id} className={`min-w-0 max-w-[86%] rounded-2xl px-4 py-3 shadow-sm [overflow-wrap:anywhere] ${message.direction === "outbound" ? "justify-self-end rounded-br-md bg-[#cfeee0]" : "justify-self-start rounded-bl-md bg-white"}`}>
                     <MessageBody message={message} />
                     <div className="mt-2 flex items-center justify-end gap-2 text-[9px] text-ink/40">
                       {message.direction === "outbound" ? <span>{messageStatus(message)}</span> : null}
